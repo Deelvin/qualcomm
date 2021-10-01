@@ -982,7 +982,7 @@ class ImageNetValidator(Validator):
             image = image[np.newaxis, :]
         elif "keras" in preproc:
             image = np.array(image)[np.newaxis, :].astype("float32")
-            from keras.applications.resnet50 import preprocess_input
+            from tensorflow.keras.applications.resnet50 import preprocess_input
             image = preprocess_input(image)
 
         self.inputs = {name : image}
@@ -1098,10 +1098,9 @@ class Executor(object):
             else:
                 ctx = self.remote.cpu(0)
             lib.export_library(dso_binary_path, ndk.create_shared)
-            remote_path = "/data/local/tmp/" + dso_binary
-            self.remote.upload(dso_binary_path, target=remote_path)
+            self.remote.upload(dso_binary_path)
             print("Uploading binary...")
-            rlib = self.remote.load_module(remote_path)
+            rlib = self.remote.load_module(dso_binary)
             m = graph_runtime.create(graph, rlib, ctx)
         else:
             print("Using local runtime")
