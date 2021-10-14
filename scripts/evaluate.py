@@ -777,7 +777,7 @@ def get_args():
                 args.rpc_key,
                 host=args.rpc_tracker_host,
                 port=args.rpc_tracker_port,
-                number=100,
+                number=25,
                 timeout=15,
                 #min_repeat_ms=150,
                 #cooldown_interval=150
@@ -1081,12 +1081,12 @@ class Executor(object):
             self._connect_tracker()
 
         with relay.build_config(opt_level=3):
-            print("Relay model to compile:\n")
-            print(tvm_mod)
+            # print("Relay model to compile:\n")
+            # print(tvm_mod)
             graph, lib, params = relay.build(
                 tvm_mod, target_host=target_host, target=target, params=params
             )
-            print("JSON:\n", graph)
+            # print("JSON:\n", graph)
 
         if self.remote:
             print("Using Android OpenCL runtime over RPC")
@@ -1098,6 +1098,7 @@ class Executor(object):
             else:
                 ctx = self.remote.cpu(0)
             lib.export_library(dso_binary_path, ndk.create_shared)
+            remote_path = "/data/local/tmp/" + dso_binary
             self.remote.upload(dso_binary_path)
             print("Uploading binary...")
             rlib = self.remote.load_module(dso_binary)
@@ -1186,7 +1187,7 @@ class Executor(object):
         tasks,
         measure_option,
         tuner="xgb",
-        n_trial=1024,
+        n_trial=333,
         early_stopping=None,
         log_filename="tuning.log",
         use_transfer_learning=True,
@@ -1230,7 +1231,7 @@ class Executor(object):
             )
 
         autotvm.record.pick_best(tmp_log_file, log_filename)
-        os.remove(tmp_log_file)
+        # os.remove(tmp_log_file)
 
 if __name__ == "__main__":
     main()

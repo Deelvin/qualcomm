@@ -159,13 +159,18 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     ##### space definition begin #####
     n, fc, y, x, fb = s[conv].op.axis
     rcc, rcb, ry, rx = s[conv].op.reduce_axis
-    cfg.define_split("tile_fc", fc, num_outputs=4)
-    cfg.define_split("tile_y", y, num_outputs=4)
-    cfg.define_split("tile_x", x, num_outputs=4)
+    cfg.define_split("tile_fc", fc, num_outputs=3,
+                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] >= 2 and entity.size[2] < 128 )
+    cfg.define_split("tile_y", y, num_outputs=3,
+                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] < 16 )
+    cfg.define_split("tile_x", x, num_outputs=3,
+                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] < 16 )
+
     cfg.define_split("tile_rcc", rcc, num_outputs=2)
     cfg.define_split("tile_ry", ry, num_outputs=2)
     cfg.define_split("tile_rx", rx, num_outputs=2)
     cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
+    cfg.multi_filter(filter=lambda entity: entity["tile_fc"].size[2] * entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
 
     target = tvm.target.Target.current()
     if target.kind.name in ["nvptx", "rocm"]:
@@ -231,9 +236,9 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
 
     kernel_scope, n = s[output].split(n, nparts=1)
 
-    bf, vf, tf, fi = cfg["tile_fc"].apply(s, output, fc)
-    by, vy, ty, yi = cfg["tile_y"].apply(s, output, y)
-    bx, vx, tx, xi = cfg["tile_x"].apply(s, output, x)
+    bf, vf, tf = cfg["tile_fc"].apply(s, output, fc)
+    by, vy, ty = cfg["tile_y"].apply(s, output, y)
+    bx, vx, tx = cfg["tile_x"].apply(s, output, x)
 
     bf = s[output].fuse(n, bf)
     s[output].bind(bf, te.thread_axis("blockIdx.z"))
@@ -245,7 +250,7 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     s[output].bind(tf, te.thread_axis("threadIdx.z"))
     s[output].bind(ty, te.thread_axis("threadIdx.y"))
     s[output].bind(tx, te.thread_axis("threadIdx.x"))
-    s[output].reorder(bf, by, bx, vf, vy, vx, tf, ty, tx, fi, yi, xi, fb)
+    s[output].reorder(bf, by, bx, vf, vy, vx, tf, ty, tx, fb)
     s[output].vectorize(fb)
 
     s[OL].compute_at(s[output], tx)
