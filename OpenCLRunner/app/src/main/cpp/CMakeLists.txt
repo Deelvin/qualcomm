@@ -20,16 +20,24 @@ project("openclrunner")
 include_directories(
         libopencl-stub/include/
         libopencl-stub/include/CL/
+        common/
+        implementations/
+)
+
+file(GLOB src_files
+        openclrunner.cpp
+        common/*.cpp
+        implementations/*.cpp
 )
 
 add_library( # Sets the name of the library.
-             openclrunner
+             ${PROJECT_NAME}
 
              # Sets the library as a shared library.
              SHARED
 
              # Provides a relative path to your source file(s).
-             openclrunner.cpp )
+             ${src_files} )
 
 # Searches for a specified prebuilt library and stores the path as a
 # variable. Because CMake includes system libraries in the search path by
@@ -52,7 +60,7 @@ find_library( # Sets the name of the path variable.
 # build script, prebuilt third-party libraries, or system libraries.
 
 target_link_libraries( # Specifies the target library.
-                       openclrunner
+                       ${PROJECT_NAME}
 
                        # Links the target library to the log library
                        # included in the NDK.
