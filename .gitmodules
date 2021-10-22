@@ -10,3 +10,6 @@
 [submodule "3rdparty/vta-hw"]
 	path = tvm/3rdparty/vta-hw
 	url = https://github.com/apache/incubator-tvm-vta
+[submodule "OpenCLRunner/app/src/main/cpp/libopencl-stub"]
+	path = OpenCLRunner/app/src/main/cpp/libopencl-stub
+	url = https://github.com/echuraev/libopencl-stub.git
