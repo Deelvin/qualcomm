@@ -46,7 +46,7 @@ ExecTime mace_inceptionv3_kernel(JNIEnv* env, jobject assetManager) {
 
     // ============ CREATE OpenCL IMAGES ============
     cl_image_format format;             // structure to define image format
-    format.image_channel_data_type = CL_FLOAT;
+    format.image_channel_data_type = CL_HALF_FLOAT;
     format.image_channel_order = CL_RGBA;
 
     // init image description
