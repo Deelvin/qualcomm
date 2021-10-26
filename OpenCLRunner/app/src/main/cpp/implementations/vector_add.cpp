@@ -1,38 +1,22 @@
 #include "vector_add.h"
 #include <common_functions.h>
 
-#ifdef __APPLE__
-#include <OpenCL/opencl.h>
-#else
-#include <CL/cl.h>
-#endif
+#include <chrono>
+
+#include <android/log.h>
 
 #define BUFF_SIZE 10
 
-std::string vector_add(JNIEnv* env, jobject assetManager)
+ExecTime vector_add(JNIEnv* env, jobject assetManager)
 {
-    std::string kernelSource = readKernel(env, assetManager, "vector_add.cl");
-    cl_platform_id platform_id;
-    cl_uint ret_num_platforms;
     cl_device_id device_id;
-    cl_uint ret_num_devices;
+    cl_context context;
+    cl_command_queue command_queue;
+    int err;
+    prepareOpenCLDevice(device_id, context, command_queue);
 
-    int err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
-    err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);
-    assert(err == CL_SUCCESS);
-
-    // Create context
-    cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
-    assert(err == CL_SUCCESS);
-    cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &err);
-    assert(err == CL_SUCCESS);
+    std::string kernelSource = readKernel(env, assetManager, "vector_add.cl");
     const char* str = kernelSource.c_str();
-
-    cl_program program = clCreateProgramWithSource(context, 1,  &str, NULL, &err);
-    assert(err == CL_SUCCESS);
-    //err = clBuildProgram(program, 1, &device_id, "-g -s vectorAdd.cl", NULL, NULL);
-    err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
-    assert(err == CL_SUCCESS);
 
     // Create buffers
     cl_int *a_arr = new cl_int[BUFF_SIZE];
@@ -40,12 +24,8 @@ std::string vector_add(JNIEnv* env, jobject assetManager)
     cl_int *c_arr = new cl_int[BUFF_SIZE];
 
     // Create and print arrays
-    for (int i(0); i < BUFF_SIZE; ++i)
-    {
+    for (int i(0); i < BUFF_SIZE; ++i) {
         a_arr[i] = i;
-    }
-    for (int i(0); i < BUFF_SIZE; ++i)
-    {
         b_arr[i] = 10*i;
     }
 
@@ -54,6 +34,15 @@ std::string vector_add(JNIEnv* env, jobject assetManager)
     cl_mem b_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, BUFF_SIZE * sizeof(cl_int), b_arr, &err);
     assert(err == CL_SUCCESS);
     cl_mem c_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, BUFF_SIZE * sizeof(cl_int), NULL, &err);
+    assert(err == CL_SUCCESS);
+
+    cl_program program = clCreateProgramWithSource(context, 1,  &str, NULL, &err);
+    assert(err == CL_SUCCESS);
+
+    auto cpuStart = std::chrono::high_resolution_clock::now();
+
+    //err = clBuildProgram(program, 1, &device_id, "-g -s vectorAdd.cl", NULL, NULL);
+    err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
     assert(err == CL_SUCCESS);
 
     // Create kernel
@@ -70,23 +59,37 @@ std::string vector_add(JNIEnv* env, jobject assetManager)
 
     // Run kernel
     size_t global_work_size[1] = { BUFF_SIZE }; // Define global size of execution
-    err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, NULL);
+    cl_event event;
+    err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, &event);
     assert(err == CL_SUCCESS);
-    clFinish(command_queue);
+    err = clWaitForEvents(1, &event);
+    assert(err == CL_SUCCESS);
+    err = clFinish(command_queue);
+    assert(err == CL_SUCCESS);
+    auto cpuEnd = std::chrono::high_resolution_clock::now();
     // Read buffer with result of calculation
     err = clEnqueueReadBuffer(command_queue, c_mem, CL_TRUE, 0, BUFF_SIZE * sizeof(cl_int), c_arr, 0, NULL, NULL);
     assert(err == CL_SUCCESS);
 
     std::string res = "{";
-    for (int i(0); i < BUFF_SIZE; ++i)
-    {
+    for (int i(0); i < BUFF_SIZE; ++i) {
         res += std::to_string(c_arr[i]) + ", ";
     }
     res += "}";
 
-    //delete [] source_str;
+    __android_log_print(ANDROID_LOG_DEBUG, "OpenCL Runner Answer", "Vector Add answer : %s", res.c_str());
+
+    cl_ulong time_start;
+    cl_ulong time_end;
+
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
+
+    double kernelTimeMS = (time_end - time_start)   * 1e-6; // from ns to ms
+    auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
+
     delete [] a_arr;
     delete [] b_arr;
     delete [] c_arr;
-    return res;
+    return {cpuTimeMS, kernelTimeMS};
 }

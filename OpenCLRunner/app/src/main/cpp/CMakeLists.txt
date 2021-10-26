@@ -26,8 +26,9 @@ include_directories(
 
 file(GLOB src_files
         openclrunner.cpp
-        common/*.cpp
-        implementations/*.cpp
+        common/common_functions.cpp
+        implementations/vector_add.cpp
+        implementations/mace_inceptionv3_kernel.cpp
 )
 
 add_library( # Sets the name of the library.
