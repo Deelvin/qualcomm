@@ -1,6 +1,7 @@
 #ifndef OPENCL_RUNNER_COMMON_FUNCTIONS_H
 #define OPENCL_RUNNER_COMMON_FUNCTIONS_H
 
+#include <cassert>
 #include <functional>
 #include <jni.h>
 #include <string>
