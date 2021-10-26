@@ -63,6 +63,26 @@ class ModelImporter(object):
         mod = relay.quantize.prerequisite_optimize(mod, params)
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, preproc="mxnet"))
 
+    def import_resnet50_v2(self, target="llvm", dtype="float32"):
+        model, input_shape = gluon_model("resnet50_v2", batch_size=1)
+        shape_dict = {"data": input_shape}
+        mod, params = relay.frontend.from_mxnet(model, shape_dict)
+        mod = relay.quantize.prerequisite_optimize(mod, params)
+
+        # layout transformation
+        if "adreno" in target:
+            layout_config = relay.transform.LayoutConfig(skip_layers=[0])
+            desired_layouts = {"nn.conv2d": ["NCHW4c", "OIHW4o"]}
+            with layout_config:
+                seq = tvm.transform.Sequential([relay.transform.ConvertLayout(desired_layouts)])
+                with tvm.transform.PassContext(opt_level=3):
+                    mod = seq(mod)
+        # downcast to float16
+        if dtype == "float16":
+            mod = downcast_fp16(mod["main"], mod)
+        mod = relay.quantize.prerequisite_optimize(mod, params)
+        return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, preproc="mxnet"))
+
     def import_mobilenetv1(self, target="llvm", dtype="float32"):
         model, input_shape = gluon_model("mobilenet1.0", batch_size=1)
         shape_dict = {"data": input_shape}
@@ -921,7 +941,7 @@ def gluon_model(name, batch_size=None):
     import mxnet.gluon as gluon
 
     model = gluon.model_zoo.vision.get_model(name, pretrained=True)
-    if "resnet50_v1" or "mobilenet1.0" in name:
+    if "resnet50_v1" or "mobilenet1.0" or "resnet50_v2" in name:
         data_shape = (batch_size, 3, 224, 224)
     elif "inception" in name:
         data_shape = (batch_size, 3, 299, 299)
