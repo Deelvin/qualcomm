@@ -843,7 +843,10 @@ class ConfigSpace(object):
                 if fil(entities) == True:
                     self.filtered_indexes[new_len] = i
                     new_len += 1
-            self._length = new_len
+            if new_len > 0:
+                self._length = new_len
+            else:
+                self.filtered_indexes = None
             # print(self._length)
 
     def _add_new_transform(self, space_class, name, axes, policy, **kwargs):
