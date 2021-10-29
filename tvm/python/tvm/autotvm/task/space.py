@@ -675,6 +675,7 @@ class ConfigSpace(object):
         self.shared_filter = None
         self.non_filtered_len = 0
         self.filtered_indexes = None
+        self.a2f_indexes = None
 
     @staticmethod
     def axis(var):
@@ -834,6 +835,7 @@ class ConfigSpace(object):
             new_len = 0
             # print(self._length)
             self.filtered_indexes = {}
+            self.a2f_indexes = {}
             for i in range(self._length):
                 entities = OrderedDict()
                 t = i
@@ -842,11 +844,13 @@ class ConfigSpace(object):
                     t //= len(space)
                 if fil(entities) == True:
                     self.filtered_indexes[new_len] = i
+                    self.a2f_indexes[i] = new_len
                     new_len += 1
             if new_len > 0:
                 self._length = new_len
             else:
                 self.filtered_indexes = None
+                self.a2f_indexes = None
             # print(self._length)
 
     def _add_new_transform(self, space_class, name, axes, policy, **kwargs):
