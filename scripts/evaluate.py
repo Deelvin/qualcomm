@@ -792,12 +792,12 @@ def get_args():
         "log_filename": args.log,
         "early_stopping": None,
         "measure_option": autotvm.measure_option(
-            builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15),
+            builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15, n_parallel=2),
             runner=autotvm.RPCRunner(
                 args.rpc_key,
                 host=args.rpc_tracker_host,
                 port=args.rpc_tracker_port,
-                number=25,
+                number=50,
                 timeout=15,
                 #min_repeat_ms=150,
                 #cooldown_interval=150
@@ -940,10 +940,11 @@ def get_input_data_shape_dict(graph_def, input_shape):
 def gluon_model(name, batch_size=None):
     import mxnet.gluon as gluon
 
-    model = gluon.model_zoo.vision.get_model(name, pretrained=True)
-    if "resnet50_v1" or "mobilenet1.0" or "resnet50_v2" in name:
+    if "resnet50_v1" in name or "mobilenet1.0" in name or "resnet50_v2" in name:
+        model = gluon.model_zoo.vision.get_model(name, pretrained=True)
         data_shape = (batch_size, 3, 224, 224)
-    elif "inception" in name:
+    elif "inceptionv3" in name:
+        model = gluon.model_zoo.vision.inception_v3(pretrained=True)
         data_shape = (batch_size, 3, 299, 299)
     else:
         raise ValueError("Input shape unknown for gluon model: " + name)
@@ -1106,6 +1107,9 @@ class Executor(object):
             graph, lib, params = relay.build(
                 tvm_mod, target_host=target_host, target=target, params=params
             )
+            #lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
+            #lib2.export_library("/home/amalyshe/sandboxes/2021_10_qualcomm/adreno_test_package_tvm_chris/_model.so", ndk.create_shared)
+
             # print("JSON:\n", graph)
 
         if self.remote:
@@ -1194,6 +1198,7 @@ class Executor(object):
 
             def tuned_benchmark():
                 print("Apply best performing tuning profiles:")
+
                 with autotvm.apply_history_best(options["log_filename"]):
                     bench()
 
@@ -1210,14 +1215,14 @@ class Executor(object):
         n_trial=333,
         early_stopping=None,
         log_filename="tuning.log",
-        use_transfer_learning=True,
+        use_transfer_learning=False,
     ):
         from tvm.autotvm.tuner import XGBTuner
         from tvm.autotvm.tuner import GATuner
 
         tmp_log_file = log_filename + ".tmp"
-        if os.path.exists(tmp_log_file) and use_transfer_learning == False:
-            os.remove(tmp_log_file)
+        #if os.path.exists(tmp_log_file) and use_transfer_learning == False:
+        #    os.remove(tmp_log_file)
 
         for i, tsk in enumerate(reversed(tasks)):
             print("Task: ", tsk)
