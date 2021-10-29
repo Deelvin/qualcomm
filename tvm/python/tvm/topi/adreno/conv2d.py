@@ -170,13 +170,14 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     cfg.define_split("tile_ry", ry, num_outputs=2)
     cfg.define_split("tile_rx", rx, num_outputs=2)
     cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
-    cfg.multi_filter(filter=lambda entity: entity["tile_fc"].size[2] * entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
 
     target = tvm.target.Target.current()
     if target.kind.name in ["nvptx", "rocm"]:
         cfg.define_knob("unroll_explicit", [1])
     else:
         cfg.define_knob("unroll_explicit", [0, 1])
+
+    cfg.multi_filter(filter=lambda entity: entity["tile_fc"].size[2] * entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
     ##### space definition end #####
 
     if autotvm.GLOBAL_SCOPE.in_tuning:
