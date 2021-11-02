@@ -151,6 +151,24 @@ TVM_DLL const Op& popcount();
 TVM_DLL const Op& fma();
 
 /*!
+ * \brief Fused multiply add for integers
+ *
+ *  Type mad(a, b, c) {
+ *    return a * b + c;
+ *  }
+ */
+TVM_DLL const Op& mad();
+
+/*!
+ * \brief Fast integer function to multiply 24-bit integer values.
+ *
+ *  Type mul24(a, b) {
+ *    return a * b;
+ *  }
+ */
+TVM_DLL const Op& mul24();
+
+/*!
  * \brief Call an extern C function with given name
  *        and signature from the types of args in the runtime environment.
  *
