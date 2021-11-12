@@ -30,6 +30,7 @@ file(GLOB src_files
         implementations/vector_add.cpp
         implementations/mace_inceptionv3_kernel.cpp
         implementations/tvm_resnet50v2_conv_kernel.cpp
+        implementations/simple_mad.cpp
 )
 
 add_library( # Sets the name of the library.
