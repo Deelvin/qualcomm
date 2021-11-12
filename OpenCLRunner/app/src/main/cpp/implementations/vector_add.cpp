@@ -42,7 +42,7 @@ ExecTime vector_add(JNIEnv* env, jobject assetManager)
     auto cpuStart = std::chrono::high_resolution_clock::now();
 
     //err = clBuildProgram(program, 1, &device_id, "-g -s vectorAdd.cl", NULL, NULL);
-    err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+    err = clBuildProgramWrapper(program, 1, &device_id);
     assert(err == CL_SUCCESS);
 
     // Create kernel
@@ -88,6 +88,12 @@ ExecTime vector_add(JNIEnv* env, jobject assetManager)
     double kernelTimeMS = (time_end - time_start)   * 1e-6; // from ns to ms
     auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
 
+    err = clReleaseMemObject(a_mem);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(b_mem);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(c_mem);
+    assert(err == CL_SUCCESS);
     delete [] a_arr;
     delete [] b_arr;
     delete [] c_arr;

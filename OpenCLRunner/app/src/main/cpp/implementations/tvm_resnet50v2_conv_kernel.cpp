@@ -126,7 +126,7 @@ ExecTime tvm_resnet50v2_conv_kernel(JNIEnv* env, jobject assetManager) {
     cl_program program = clCreateProgramWithSource(context, 1,  &str, NULL, &err);
     assert(err == CL_SUCCESS);
     auto cpuStart = std::chrono::high_resolution_clock::now();
-    err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+    err = clBuildProgramWrapper(program, 1, &device_id);
     assert(err == CL_SUCCESS);
     cl_kernel kernel0 = clCreateKernel(program, "fused_nn_conv2d_multiply_add_nn_relu_16_kernel0", &err);
     assert(err == CL_SUCCESS);
@@ -179,6 +179,19 @@ ExecTime tvm_resnet50v2_conv_kernel(JNIEnv* env, jobject assetManager) {
     kernelTimeMS += (time_end - time_start); // from ns to ms
     kernelTimeMS *= 1e-6;
     auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
+
+    err = clReleaseMemObject(input_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(pad_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(filter_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(output_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(mul_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(bias_img);
+    assert(err == CL_SUCCESS);
 
     return {cpuTimeMS, kernelTimeMS};
 }

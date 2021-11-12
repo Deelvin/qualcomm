@@ -1,6 +1,7 @@
 #include "common_functions.h"
 
 #include <android/asset_manager_jni.h>
+#include <android/log.h>
 
 std::string readKernel(JNIEnv* env, jobject assetManager, const std::string& name) {
     std::string res;
@@ -45,4 +46,17 @@ std::string measureExecTime(Executor exec, JNIEnv* env, jobject assetManager, un
     kernelTime /= repeat;
     std::string str = "CPU: " + std::to_string(cpuTime) + ", OpenCL: " + std::to_string(kernelTime);
     return str;
+}
+
+int clBuildProgramWrapper(cl_program program, cl_uint num_devices, const cl_device_id* device_list, const char* options) {
+    int err = clBuildProgram(program, num_devices, device_list, options, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        size_t len;
+        std::string log;
+        clGetProgramBuildInfo(program, *device_list, CL_PROGRAM_BUILD_LOG, 0, nullptr, &len);
+        log.resize(len);
+        clGetProgramBuildInfo(program, *device_list, CL_PROGRAM_BUILD_LOG, len, &log[0], nullptr);
+        __android_log_print(ANDROID_LOG_DEBUG, "OpenCL Runner clBuildProgramWrapper", "Error: %s", log.c_str());
+    }
+    return err;
 }

@@ -106,7 +106,7 @@ ExecTime mace_inceptionv3_kernel(JNIEnv* env, jobject assetManager) {
     cl_program program = clCreateProgramWithSource(context, 1,  &str, NULL, &err);
     assert(err == CL_SUCCESS);
     auto cpuStart = std::chrono::high_resolution_clock::now();
-    err = clBuildProgram(program, 1, &device_id, buildOptions.c_str(), NULL, NULL);
+    err = clBuildProgramWrapper(program, 1, &device_id, buildOptions.c_str());
     assert(err == CL_SUCCESS);
     cl_kernel kernel = clCreateKernel(program, "conv_2d_3x3", &err);
     assert(err == CL_SUCCESS);
@@ -184,8 +184,17 @@ ExecTime mace_inceptionv3_kernel(JNIEnv* env, jobject assetManager) {
     clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
     clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
 
-    double kernelTimeMS = (time_end - time_start)   * 1e-6; // from ns to ms
+    double kernelTimeMS = (time_end - time_start) * 1e-6; // from ns to ms
     auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
+
+    err = clReleaseMemObject(input_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(filter_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(bias_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseMemObject(output_img);
+    assert(err == CL_SUCCESS);
 
     return {cpuTimeMS, kernelTimeMS};
 }
