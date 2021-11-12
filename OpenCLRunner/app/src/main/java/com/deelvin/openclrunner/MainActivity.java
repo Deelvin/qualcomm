@@ -25,8 +25,29 @@ public class MainActivity extends AppCompatActivity {
         final Button runButton = findViewById(R.id.runButton);
         runButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                final TextView timeText = findViewById(R.id.timeView);
-                timeText.setText(runOpenCL(mgr));
+                runButton.setText("Running...");
+                runButton.setEnabled(false);
+
+                final Thread t = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        final TextView timeText = findViewById(R.id.timeView);
+                        String msg = runOpenCL(mgr);
+                        timeText.post(new Runnable() {
+                            public void run() {
+                                timeText.setText(msg);
+                            }
+                        });
+                        final Button runButton = findViewById(R.id.runButton);
+                        runButton.post(new Runnable() {
+                            public void run() {
+                                runButton.setText("RUN");
+                                runButton.setEnabled(true);
+                            }
+                        });
+                    }
+                });
+                t.start();
             }
         });
     }
