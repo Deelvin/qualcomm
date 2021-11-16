@@ -940,7 +940,7 @@ def get_input_data_shape_dict(graph_def, input_shape):
 def gluon_model(name, batch_size=None):
     import mxnet.gluon as gluon
 
-    if "resnet50_v1" in name or "mobilenet1.0" in name or "resnet50_v2" in name:
+    if "resnet50_v1" in name or "mobilenet1.0" in name or "resnet50_v2" in name or "vgg16" in name:
         model = gluon.model_zoo.vision.get_model(name, pretrained=True)
         data_shape = (batch_size, 3, 224, 224)
     elif "inceptionv3" in name:
@@ -1003,7 +1003,7 @@ class ImageNetValidator(Validator):
             image = image[np.newaxis, :]
         elif "keras" in preproc:
             image = np.array(image)[np.newaxis, :].astype("float32")
-            from tensorflow.keras.applications.resnet50 import preprocess_input
+            from tensorflow.keras.applications.inception_v3 import preprocess_input
             image = preprocess_input(image)
 
         self.inputs = {name : image}
@@ -1108,7 +1108,7 @@ class Executor(object):
                 tvm_mod, target_host=target_host, target=target, params=params
             )
             #lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
-            #lib2.export_library("/home/amalyshe/sandboxes/2021_10_qualcomm/adreno_test_package_tvm_chris/_model.so", ndk.create_shared)
+            #lib2.export_library("_model.so", ndk.create_shared)
 
             # print("JSON:\n", graph)
 
