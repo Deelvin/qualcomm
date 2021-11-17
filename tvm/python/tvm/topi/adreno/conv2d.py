@@ -108,6 +108,23 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
     # compute graph
     pad_before = [0, 0, pad_top, pad_left, 0]
     pad_after = [0, 0, pad_down, pad_right, 0]
+
+    # can output shape be divded by 2 or even 4?
+    # if it cannot be divided, need to extend for further help with split
+    if out_height % 2 != 0:
+        out_height += 1
+        pad_after[2] = pad_after[2] + stride_h
+    if out_width % 2 != 0:
+        out_width += 1
+        pad_after[3] = pad_after[3] + stride_w
+
+    if out_height % 4 != 0:
+        out_height += 2
+        pad_after[2] = pad_after[2] + 2 * stride_h
+    if out_width % 4 != 0:
+        out_width += 2
+        pad_after[3] = pad_after[3] + 2 * stride_w
+
     temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
 
     rcc = te.reduce_axis((0, in_channel_chunk), name="rc")
