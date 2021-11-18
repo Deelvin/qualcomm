@@ -144,21 +144,31 @@ class ModelImporter(object):
         return (mod, params, input_shape, dtype, target)
 
     def import_deeplabv3(self, target="llvm", dtype="float32"):
-        import onnx
+        import tensorflow as tf
+        try:
+            tf_compat_v1 = tf.compat.v1
+        except ImportError:
+            tf_compat_v1 = tf
+        # Tensorflow utility functions
+        import tvm.relay.testing.tf as tf_testing
 
-        graph_file = os.path.abspath(
+        model_path = os.path.abspath(
             os.path.dirname(os.path.realpath(__file__))
-            + "/../models/deeplabv3_mnv2_pascal_train_aug/deeplabv3_mnv2.onnx"
+            + "/../models/mace_deeplabv3/deeplab-v3-plus-mobilenet-v2.pb"
         )
-        model = onnx.load_model(graph_file)
-        input_shape = {"ImageTensor:0": (1, 224, 224, 3)}
-        input_names, shape_dict = get_input_data_shape_dict(
-            model, input_shape["ImageTensor:0"]
-        )
-        mod, params = relay.frontend.from_onnx(model, shape_dict, opset=11, freeze_params=True)
+
+        with tf_compat_v1.gfile.GFile(model_path, "rb") as f:
+            graph_def = tf_compat_v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+            #graph = tf.import_graph_def(graph_def, name="")
+            # Call the utility to import the graph definition into default graph.
+            graph_def = tf_testing.ProcessGraphDefParam(graph_def)
+
+        input_shape = {"sub_7": (1, 513, 513, 3)}
+        mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape)
 
         from tvm.relay import transform
-        mod = transform.DynamicToStatic()(mod)
+        #mod = transform.DynamicToStatic()(mod)
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
         if dtype == "float16":
@@ -167,10 +177,13 @@ class ModelImporter(object):
 
         # layout transformation
         if "adreno" in target:
-            layout_config = relay.transform.LayoutConfig(skip_layers=[0])
+            layout_config = relay.transform.LayoutConfig(skip_layers=[0, 54])
             desired_layouts = {"nn.conv2d": ["NCHW4c", "OIHW4o"]}
             with layout_config:
-                seq = tvm.transform.Sequential([relay.transform.SimplifyExpr(), relay.transform.ConvertLayout(desired_layouts)])
+                seq = tvm.transform.Sequential([
+                    relay.transform.SimplifyExpr(),
+                    relay.transform.ConvertLayout(desired_layouts)
+                    ])
                 with tvm.transform.PassContext(opt_level=3):
                     mod = seq(mod)
             mod = relay.quantize.prerequisite_optimize(mod, params)
