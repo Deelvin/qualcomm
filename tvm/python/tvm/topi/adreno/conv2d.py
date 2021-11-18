@@ -103,8 +103,8 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
         padding, (dilated_kernel_h, dilated_kernel_w)
     )
 
-    out_height = simplify((in_height - dilated_kernel_h + pad_top + pad_down) // stride_h + 1)
-    out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
+    out_height_orig = out_height = simplify((in_height - dilated_kernel_h + pad_top + pad_down) // stride_h + 1)
+    out_width_orig = out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
     # compute graph
     pad_before = [0, 0, pad_top, pad_left, 0]
     pad_after = [0, 0, pad_down, pad_right, 0]
@@ -167,7 +167,7 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
             ),
             tag="conv2d_nchwc",
         )
-    return te.compute(conv.shape, lambda n,fc,y,x,fb: conv[n,fc,y,x,fb].astype("float16"), tag="cast_from_acc" + args["accumulator"][-2:])
+    return te.compute((batch, num_filter_chunk, out_height_orig, out_width_orig, num_filter_block), lambda n,fc,y,x,fb: conv[n,fc,y,x,fb].astype("float16"), tag="cast_from_acc" + args["accumulator"][-2:])
 
 def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     """schedule optimized for batch size = 1"""
