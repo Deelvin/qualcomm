@@ -412,5 +412,5 @@ __kernel void tvmgen_default_fused_nn_conv2d_kernel1_good(__global float* restri
 // global work size: [100352, 1, 1]
 // local work  size: [1, 1, 1]
 __kernel void tvmgen_default_fused_nn_conv2d_kernel1_bad(__global float* restrict output_unpack, __global float* restrict conv) {
-      output_unpack[(((int)get_group_id(0)))] = conv[(((((((int)get_group_id(0)) / 12544) * 12544) + ((((int)get_group_id(0)) % 3136) * 4)) + ((((int)get_group_id(0)) % 12544) / 3136)))];
+      output_unpack[(((int)get_global_id(0)))] = conv[(((((((int)get_global_id(0)) / 12544) * 12544) + ((((int)get_global_id(0)) % 3136) * 4)) + ((((int)get_global_id(0)) % 12544) / 3136)))];
 }

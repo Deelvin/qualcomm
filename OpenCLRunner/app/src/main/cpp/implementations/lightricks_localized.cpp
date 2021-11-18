@@ -131,7 +131,7 @@ ExecTime lightricks_localized_reproducer(JNIEnv* env, jobject assetManager)
     assert(err == CL_SUCCESS);
 
 
-    cl_kernel kernel1 = clCreateKernel(program, "tvmgen_default_fused_nn_conv2d_kernel1_good", &err);
+    cl_kernel kernel1 = clCreateKernel(program, "tvmgen_default_fused_nn_conv2d_kernel1_bad", &err);
     assert(err == CL_SUCCESS);
 
     // Set kernel arguments
@@ -142,7 +142,7 @@ ExecTime lightricks_localized_reproducer(JNIEnv* env, jobject assetManager)
 
     // Run kernel
     size_t gws1[3] = { 100352, 1, 1}; // Define global size of execution
-    size_t lws1[3] = { 2, 1, 1}; // Define local size of execution
+    size_t lws1[3] = { 1, 1, 1}; // Define local size of execution
 
     err = clEnqueueNDRangeKernel(command_queue, kernel1, 3, NULL, gws1, lws1, 0, NULL, &event);
     assert(err == CL_SUCCESS);
