@@ -156,19 +156,31 @@ void printDevInfo(cl_device_id& device_id) {
 }
 
 void prepareOpenCLDevice(cl_device_id& device_id, cl_context& ctx, cl_command_queue& cq, bool printDeviceInfo) {
-    cl_platform_id platform_id;
     cl_uint ret_num_platforms;
     cl_uint ret_num_devices;
 
-    int err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
-    err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);
+    int err = clGetPlatformIDs(0, NULL, &ret_num_platforms);
     assert(err == CL_SUCCESS);
+    cl_platform_id* platforms = new cl_platform_id[ret_num_platforms];
+    err = clGetPlatformIDs(ret_num_platforms, platforms, &ret_num_platforms);
+    assert(err == CL_SUCCESS);
+    for (int i = 0; i < ret_num_platforms; ++i) {
+        err = clGetDeviceIDs(platforms[i], CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);
+        if (err == CL_SUCCESS)
+            break;
+    }
+    if (err != CL_SUCCESS) {
+        std::cerr << "WARNING! Cannot find platform with GPU. Using CPU instead!" << std::endl;
+        err = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_CPU, 1, &device_id, &ret_num_devices);
+        assert(err == CL_SUCCESS);
+    }
 
     // Create context
     ctx = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
     assert(err == CL_SUCCESS);
     cq = clCreateCommandQueue(ctx, device_id, CL_QUEUE_PROFILING_ENABLE, &err);
     assert(err == CL_SUCCESS);
+    delete [] platforms;
 
     if (printDeviceInfo) {
         printDevInfo(device_id);
