@@ -1,5 +1,5 @@
 //Kernel: tvmgen_default_fused_nn_conv2d_kernel0
-//global work size: [784, 1, 1]  - but if without bug it should be [28, 1, 1]
+//global work size: [784, 1, 1]
 //local work  size: [28, 1, 1]
 
 __kernel void tvmgen_default_fused_nn_conv2d_kernel0(__global float* restrict placeholder, __global float* restrict placeholder1, __global float* restrict conv, __global int* restrict idxs) {
@@ -402,15 +402,29 @@ __kernel void tvmgen_default_fused_nn_conv2d_kernel0(__global float* restrict pl
 
 
 // tvmgen_default_fused_nn_conv2d_kernel1
-// global work size: [100352, 1, 1] - but if without bug it should be [50176, 1, 1](?)
+// global work size: [100352, 1, 1]
 // local work  size: [2, 1, 1]
 __kernel void tvmgen_default_fused_nn_conv2d_kernel1_good(__global float* restrict output_unpack, __global float* restrict conv) {
-      output_unpack[(((((int)get_group_id(0)) * 2) + ((int)get_local_id(0))))] = conv[(((((((((int)get_group_id(0)) * 2) + ((int)get_local_id(0))) / 12544) * 12544) + ((((((int)get_group_id(0)) * 2) + ((int)get_local_id(0))) % 3136) * 4)) + ((((((int)get_group_id(0)) * 2) + ((int)get_local_id(0))) % 12544) / 3136)))];
+
+      int idx = ((int)get_group_id(0)) * 2 + (int)get_local_id(0);
+      output_unpack[idx] = conv[(idx / 12544) * 12544 + (idx - (int)((idx / 3136) * 3136)) * 4 + (idx - (int)((idx / 12544) * 12544)) / 3136];
 }
 
-// tvmgen_default_fused_nn_conv2d_kernel1
 // global work size: [100352, 1, 1]
 // local work  size: [1, 1, 1]
 __kernel void tvmgen_default_fused_nn_conv2d_kernel1_bad(__global float* restrict output_unpack, __global float* restrict conv) {
-      output_unpack[(((int)get_global_id(0)))] = conv[(((((((int)get_global_id(0)) / 12544) * 12544) + ((((int)get_global_id(0)) % 3136) * 4)) + ((((int)get_global_id(0)) % 12544) / 3136)))];
+    // if we cast to (float) then everything is okay after 65535
+    // int val = (int)(3136 * (float)((int)get_group_id(0) / 3136));
+    // otherwise all the values starting from idx = 65356 as zeros - see Deelvin::OpenCL Runner results of output1 in logcat
+    // another strange indicator is that if instead of same constant different values are used then everything is all right
+    // for example (int)(3135 * ((int)get_group_id(0) / 3136)) or (int)(3137 * ((int)get_group_id(0) / 3136)) produces correct values
+    // seems to be some incorrect compiler behavior
+    int val = (int)(3136 * ((int)get_group_id(0) / 3136));
+
+    output_unpack[(((int)get_group_id(0)))] = val;
+
+    //int idx = (int)get_group_id(0);
+    //output_unpack[idx] = conv[(idx / 12544) * 12544 + (idx - (int)((idx / 3136) * 3136)) * 4 + (idx - (int)((idx / 12544) * 12544)) / 3136];
+
+
 }

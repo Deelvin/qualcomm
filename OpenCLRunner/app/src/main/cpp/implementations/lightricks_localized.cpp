@@ -120,7 +120,7 @@ ExecTime lightricks_localized_reproducer(JNIEnv* env, jobject assetManager)
     for (int i(0); i < DEBUG_IDXS_MAX_SIZE; ++i) {
         sum2 += out0_idxs[i];
     }
-    res += std::to_string(sum2);
+    res += std::to_string(sum);
     res += "}";
 
     __android_log_print(ANDROID_LOG_DEBUG, "Deelvin::OpenCL Runner results of output0:", "%s", res.c_str());
@@ -155,14 +155,12 @@ ExecTime lightricks_localized_reproducer(JNIEnv* env, jobject assetManager)
     err = clEnqueueReadBuffer(command_queue, output1_mem, CL_TRUE, 0, OUTPUT_BUFF_SIZE * sizeof(cl_float), output1, 0, NULL, NULL);
     assert(err == CL_SUCCESS);
 
-
-
     std::string res1 = "{";
     sum = 0;
     for (int i(0); i < OUTPUT_BUFF_SIZE; ++i) {
-        //res1 += std::to_string(output1[i]) + ", ";
-        if (abs(output1[i] - 2.0) < 0.01)
-            sum += output1[i];
+        if (i > 65534 and i < 65568)
+            res1 += std::to_string(i) + ": " + std::to_string(output1[i]) + ", " ;
+        sum += output1[i];
     }
 
     res1 += std::to_string(sum);
