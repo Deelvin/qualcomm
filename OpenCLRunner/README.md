@@ -1,8 +1,8 @@
-#OpenCLRunner
+# OpenCLRunner
 
 This app is used to experiment with extracted / generated kernels in standalone fashion
 
-##mali_kernels branch
+## mali_kernels branch
 branch is created to localize the root cause for accuracy issue reported by Apache TVM customer
 
 Through creation of simple network only with one convolution  
