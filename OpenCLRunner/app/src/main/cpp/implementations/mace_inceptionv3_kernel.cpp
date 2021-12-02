@@ -187,6 +187,8 @@ ExecTime mace_inceptionv3_kernel(JNIEnv* env, jobject assetManager) {
     double kernelTimeMS = (time_end - time_start) * 1e-6; // from ns to ms
     auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
 
+    err = clReleaseEvent(event);
+    assert(err == CL_SUCCESS);
     err = clReleaseMemObject(input_img);
     assert(err == CL_SUCCESS);
     err = clReleaseMemObject(filter_img);
@@ -194,6 +196,16 @@ ExecTime mace_inceptionv3_kernel(JNIEnv* env, jobject assetManager) {
     err = clReleaseMemObject(bias_img);
     assert(err == CL_SUCCESS);
     err = clReleaseMemObject(output_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseKernel(kernel);
+    assert(err == CL_SUCCESS);
+    err = clReleaseCommandQueue(command_queue);
+    assert(err == CL_SUCCESS);
+    err = clReleaseProgram(program);
+    assert(err == CL_SUCCESS);
+    err = clReleaseContext(context);
+    assert(err == CL_SUCCESS);
+    err = clReleaseDevice(device_id);
     assert(err == CL_SUCCESS);
 
     return {cpuTimeMS, kernelTimeMS};

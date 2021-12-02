@@ -180,6 +180,8 @@ ExecTime tvm_resnet50v2_conv_kernel() {
     kernelTimeMS *= 1e-6;
     auto cpuTimeMS = std::chrono::duration_cast<std::chrono::nanoseconds>(cpuEnd - cpuStart).count() * 1e-6;
 
+    err = clReleaseEvent(event);
+    assert(err == CL_SUCCESS);
     err = clReleaseMemObject(input_img);
     assert(err == CL_SUCCESS);
     err = clReleaseMemObject(pad_img);
@@ -191,6 +193,18 @@ ExecTime tvm_resnet50v2_conv_kernel() {
     err = clReleaseMemObject(mul_img);
     assert(err == CL_SUCCESS);
     err = clReleaseMemObject(bias_img);
+    assert(err == CL_SUCCESS);
+    err = clReleaseKernel(kernel0);
+    assert(err == CL_SUCCESS);
+    err = clReleaseKernel(kernel1);
+    assert(err == CL_SUCCESS);
+    err = clReleaseCommandQueue(command_queue);
+    assert(err == CL_SUCCESS);
+    err = clReleaseProgram(program);
+    assert(err == CL_SUCCESS);
+    err = clReleaseContext(context);
+    assert(err == CL_SUCCESS);
+    err = clReleaseDevice(device_id);
     assert(err == CL_SUCCESS);
 
     return {cpuTimeMS, kernelTimeMS};
