@@ -1,0 +1,47 @@
+Task:  Task(func_name=conv2d_nhwc.cuda, args=(('TENSOR', (1, 416, 416, 3), 'float16'), ('TENSOR', (3, 3, 3, 32), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc.cuda', ('TENSOR', (1, 416, 416, 3), 'float16'), ('TENSOR', (3, 3, 3, 32), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task  1/17]  Current/Best:    0.00/   9.72 GFLOPS | Progress: (62/333) | 1978.25 s/home/elvin/sandboxes/venv_tvm/lib/python3.8/site-packages/xgboost/training.py:17: UserWarning: Old style callback is deprecated.  See: https://xgboost.readthedocs.io/en/latest/python/callbacks.html
+  warnings.warn(f'Old style callback is deprecated.  See: {link}', UserWarning)
+[Task  1/17]  Current/Best:    0.00/   9.76 GFLOPS | Progress: (333/333) | 9109.21 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 8, 417, 417, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 8, 417, 417, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  2/17]  Current/Best:  291.71/ 322.31 GFLOPS | Progress: (333/333) | 6036.35 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 208, 208, 4), 'float16'), ('TENSOR', (8, 64, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 208, 208, 4), 'float16'), ('TENSOR', (8, 64, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  3/17]  Current/Best:  133.92/ 210.81 GFLOPS | Progress: (333/333) | 2403.11 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 8, 208, 208, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 8, 208, 208, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task  4/17]  Current/Best:  370.01/ 380.31 GFLOPS | Progress: (333/333) | 4997.15 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 209, 209, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 209, 209, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  5/17]  Current/Best:  315.06/ 338.75 GFLOPS | Progress: (166/333) | 4260.93 s
+[Task  5/17]  Current/Best:    0.00/ 350.66 GFLOPS | Progress: (333/333) | 6661.82 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 104, 104, 4), 'float16'), ('TENSOR', (16, 128, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 104, 104, 4), 'float16'), ('TENSOR', (16, 128, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  6/17]  Current/Best:    0.00/ 276.27 GFLOPS | Progress: (333/333) | 2809.85 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 104, 104, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 104, 104, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task  7/17]  Current/Best:  181.62/ 398.28 GFLOPS | Progress: (333/333) | 4690.30 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 105, 105, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 105, 105, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  8/17]  Current/Best:  171.16/ 369.52 GFLOPS | Progress: (333/333) | 5516.86 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 52, 52, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 52, 52, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  9/17]  Current/Best:  262.85/ 316.13 GFLOPS | Progress: (333/333) | 2383.64 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 52, 52, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 52, 52, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 10/17]  Current/Best:  354.47/ 367.20 GFLOPS | Progress: (333/333) | 4486.89 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 53, 53, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 53, 53, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 11/17]  Current/Best:  269.96/ 291.17 GFLOPS | Progress: (333/333) | 4549.42 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 26, 26, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 26, 26, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 12/17]  Current/Best:  274.27/ 284.80 GFLOPS | Progress: (333/333) | 2249.57 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 13/17]  Current/Best:  338.12/ 341.15 GFLOPS | Progress: (333/333) | 4771.16 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 27, 27, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 27, 27, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 14/17]  Current/Best:  222.63/ 238.75 GFLOPS | Progress: (333/333) | 5895.01 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 256, 13, 13, 4), 'float16'), ('TENSOR', (128, 1024, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 256, 13, 13, 4), 'float16'), ('TENSOR', (128, 1024, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 15/17]  Current/Best:  251.87/ 259.70 GFLOPS | Progress: (333/333) | 2514.96 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 16/17]  Current/Best:  211.77/ 263.47 GFLOPS | Progress: (333/333) | 6446.92 s Done.
+Task:  Task(func_name=conv2d_nhwc.cuda, args=(('TENSOR', (1, 13, 13, 1024), 'float16'), ('TENSOR', (1, 1, 1024, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc.cuda', ('TENSOR', (1, 13, 13, 1024), 'float16'), ('TENSOR', (1, 1, 1024, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 17/17]  Current/Best:    3.22/   8.18 GFLOPS | Progress: (333/333) | 2362.60 s Done.
+Apply best performing tuning profiles:
+Tracker attempting connection on 192.168.1.52:9190
+Tracker connected to remote RPC server
+./scripts/evaluate.py:1258: DeprecationWarning: legacy graph runtime behavior of producing json / lib / params will be removed in the next release. Please see documents of tvm.contrib.graph_runtime.GraphModule for the  new recommended usage.
+  graph, lib, params = relay.build(
+Using Android OpenCL runtime over RPC
+Uploading binary...
+Evaluating...
+0.225273 secs/iteration
+
