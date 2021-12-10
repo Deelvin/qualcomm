@@ -257,7 +257,8 @@ class ModelImporter(object):
             graph_def = tf_testing.ProcessGraphDefParam(graph_def)
 
         input_shape = {"input_1": (1, 416, 416, 3)}
-        mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape)
+        mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape,
+                                        outputs=["conv2d_59/BiasAdd","conv2d_67/BiasAdd"]) #,"conv2d_75/BiasAdd"
 
         from tvm.relay import transform
         #mod = transform.DynamicToStatic()(mod)
@@ -270,7 +271,7 @@ class ModelImporter(object):
         # layout transformation
         if "adreno" in target:
             #layout_config = relay.transform.LayoutConfig(skip_layers=[0,58,66,74])
-            layout_config = relay.transform.LayoutConfig(skip_layers=[0,58])
+            layout_config = relay.transform.LayoutConfig(skip_layers=[0,58,66,74])
             desired_layouts = {"nn.conv2d": ["NCHW4c", "OIHW4o"]}
             with layout_config:
                 seq = tvm.transform.Sequential([
