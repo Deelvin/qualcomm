@@ -56,6 +56,8 @@ OpenCLBuffer::MemoryLayout OpenCLBuffer::MemoryLayoutFromScope(Optional<String> 
     return OpenCLBuffer::MemoryLayout::kTexture2DActivation;
   } else if (mem_scope.value() == "texture:weight") {
     return OpenCLBuffer::MemoryLayout::kTexture2DWeight;
+  } else if (mem_scope.value() == "texture:nhwc") {
+    return OpenCLBuffer::MemoryLayout::kTexture2DNHWC;
   }
   LOG(FATAL) << "No memory layout defined for memory of scope: " << mem_scope.value();
   return OpenCLBuffer::MemoryLayout::kUndefined;
@@ -196,6 +198,7 @@ cl_mem OpenCLWorkspace::AllocTexture(TVMContext ctx, size_t width, size_t height
   cl_channel_type cl_type = DTypeToOpenCLChannelType(type_hint);
   cl_image_format format = { CL_RGBA, cl_type };
   cl_image_desc descriptor = { CL_MEM_OBJECT_IMAGE2D, width, height, 0, 0, 0, 0, 0, 0 };
+  std::cout << "AllocTexture, width: " << width << ", height: " << height << std::endl;
   cl_mem mptr = clCreateImage(
     this->context,
     CL_MEM_READ_WRITE,

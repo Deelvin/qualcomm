@@ -55,11 +55,19 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
             #     name="conv2d_nchw.cuda",
             # )
         elif data_layout == "NHWC" and kernel_layout == "HWIO":
-            strategy.add_implementation(
-                wrap_compute_conv2d(topi.cuda.conv2d_nhwc),
-                wrap_topi_schedule(topi.cuda.schedule_conv2d_nhwc),
-                name="conv2d_nhwc.cuda",
-            )
+            if data.shape[-1] % 4 == 0:
+                strategy.add_implementation(
+                    wrap_compute_conv2d(topi.adreno.conv2d_nhwc),
+                    #wrap_compute_conv2d(topi.cuda.conv2d_nhwc),
+                    wrap_topi_schedule(topi.adreno.schedule_conv2d_nhwc),
+                    name="conv2d_nhwc.image2d",
+                )
+            else:
+                strategy.add_implementation(
+                    wrap_compute_conv2d(topi.cuda.conv2d_nhwc),
+                    wrap_topi_schedule(topi.cuda.schedule_conv2d_nhwc),
+                    name="conv2d_nhwc.cuda",
+                )
         elif data_layout == "NCHW4c" and kernel_layout == "OIHW4o":
             if out_type.dtype == "float16":
                 strategy.add_implementation(
@@ -75,7 +83,7 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
                 plevel=20
             )
         else:
-            raise RuntimeError("Layout not supported: ("+data_layout+", "+kernel_layout+") - only support NCHW4c / OIHW4o layouts for conv2d")
+            raise RuntimeError("Layout not supported: ("+data_layout+", "+kernel_layout+") - only support NCHW4c / OIHW4o and NHWC / HWOI layouts for conv2d")
     elif is_depthwise_conv2d(data.shape, data_layout, kernel.shape, kernel_layout, groups):
         if data_layout == "NCHW" and kernel_layout == "OIHW":
             strategy.add_implementation(
@@ -83,7 +91,8 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
                 wrap_topi_schedule(topi.cuda.schedule_depthwise_conv2d_nchw),
                 name="depthwise_conv2d_nchw.cuda",
             )
-        elif data_layout == "NHWC" and kernel_layout == "HWIO":
+        #elif data_layout == "NHWC" and kernel_layout in ("HWIO", "HWOI"):
+        elif data_layout == "NHWC" and kernel_layout == "HWOI":
             strategy.add_implementation(
                 wrap_compute_conv2d(topi.nn.depthwise_conv2d_nhwc),
                 wrap_topi_schedule(topi.cuda.schedule_depthwise_conv2d_nhwc),
@@ -104,7 +113,7 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
                 plevel=20
             )
         else:
-            raise RuntimeError("Layout not supported: ("+data_layout+", "+kernel_layout+") - only support NCHW4c / OIHW4o layouts for conv2d")
+            raise RuntimeError("Layout not supported: ("+data_layout+", "+kernel_layout+") - only support NCHW4c / OIHW4o and NHWC / HWOI layouts for conv2d")
     else:
         raise RuntimeError("General group convolution is not currently supported")
     return strategy
