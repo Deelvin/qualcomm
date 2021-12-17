@@ -35,6 +35,16 @@ def conv2d_nhwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float1
 def schedule_conv2d_nhwc(cfg, outs):
     return schedule_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc16")
 
+@autotvm.register_topi_compute("depthwise_conv2d_nhwc.image2d")
+def depthwise_conv2d_nhwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):
+    """Compute depthwise_conv2d with NHWC layout"""
+    args={"shared" : False, "accumulator" : "float16"}
+    return compute_depthwise_conv2d_NHWC_HWOI(data, kernel, strides, padding, dilation, out_dtype, args=args)
+
+@autotvm.register_topi_schedule("depthwise_conv2d_nhwc.image2d")
+def schedule_depthwise_conv2d_nhwc(cfg, outs):
+    return schedule_depthwise_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc16")
+
 @autotvm.register_topi_compute("conv2d_nchwc.image2d")
 def conv2d_nchwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):
     """Compute conv2d with NCHWc layout"""
@@ -119,7 +129,7 @@ def compute_conv2d_NHWC_HWIO(Input, Filter, stride, padding, dilation, out_dtype
     in_channel_block = 4
     in_channel_chunk = in_channel // in_channel_block
     num_filter_block = 4
-    num_filter_chunk = out_channels // in_channel_block
+    num_filter_chunk = out_channels // num_filter_block
     rcc = te.reduce_axis((0, in_channel_chunk), name="rc")
     rcb = te.reduce_axis((0, in_channel_block), name="rc")
     ry = te.reduce_axis((0, kernel_h), name="ry")
@@ -820,3 +830,235 @@ def schedule_depthwise_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
 
     if isinstance(N, int):
         cfg.add_flop(2 * N * OH * OW * OCC * OCB * KHKW)
+
+
+def schedule_depthwise_conv2d_nhwc_impl(cfg, outs, tag):
+    """Create the schedule for depthwise conv2d_nchw4c_ohwi4o"""
+    outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
+    s = te.create_schedule([x.op for x in outs])
+    def _callback(op):
+        if op.tag == tag:
+            args={"shared" : False}
+            schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, op.output(0), args)
+
+    traverse_inline(s, outs[0].op, _callback)
+    return s
+
+def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation, out_dtype=None, args={}):
+    """Depthwise convolution operator in NCHWc layout. """
+    if out_dtype is None:
+        out_dtype = Input.dtype
+    assert isinstance(stride, int) or len(stride) == 2
+    assert isinstance(dilation, int) or len(dilation) == 2
+
+    if isinstance(stride, int):
+        stride_h = stride_w = stride
+    else:
+        stride_h, stride_w = stride
+
+    if isinstance(dilation, int):
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+
+    batch, in_height, in_width, in_channel = Input.shape
+    kernel_h, kernel_w, out_channels, _ = Filter.shape
+    #kernel_h, kernel_w, channel_multiplier, _ = Filter.shape
+    #batch, channel_chunk, in_height, in_width, channel_block = Input.shape
+    #_, channel_multiplier, kernel_h, kernel_w, _ = Filter.shape
+
+    # compute the output shape
+    dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
+    pad_top, pad_left, pad_down, pad_right = nn.get_pad_tuple(
+        padding, (dilated_kernel_h, dilated_kernel_w)
+    )
+
+    out_height_orig = out_height = simplify((in_height - dilated_kernel_h + pad_top + pad_down) // stride_h + 1)
+    out_width_orig = out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
+
+    channel_block = 4
+    in_channel_chunk = in_channel // channel_block
+    num_filter_chunk = out_channels // channel_block
+
+    # compute:
+    Input = te.compute(
+        [batch, in_height, in_width, in_channel_chunk, channel_block],
+        lambda nn, yy, xx, icc, icb: Input[nn, yy, xx, icc * 4 + icb],
+        name="input_pack",
+        tag="input_pack",
+    )
+    Filter = te.compute(
+        [kernel_h, kernel_w, in_channel, num_filter_chunk, channel_block],
+        lambda kh, kw, ic, nfc, nfb: Filter[kh, kw, nfc * 4 + nfb, ic],
+        name="filter_pack",
+        tag="filter_pack",
+    )
+
+    # compute graph
+    pad_before = [0, 0, pad_top, pad_left, 0]
+    pad_after = [0, 0, pad_down, pad_right, 0]
+
+    # can output shape be divded by 2 or even 4?
+    # if it cannot be divided, need to extend for further help with split
+    if out_height % 2 != 0:
+        out_height += 1
+        pad_after[2] = pad_after[2] + stride_h
+    if out_width % 2 != 0:
+        out_width += 1
+        pad_after[3] = pad_after[3] + stride_w
+
+    if out_height % 4 != 0:
+        out_height += 2
+        pad_after[2] = pad_after[2] + 2 * stride_h
+    if out_width % 4 != 0:
+        out_width += 2
+        pad_after[3] = pad_after[3] + 2 * stride_w
+
+    temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
+
+    ry = te.reduce_axis((0, kernel_h), name="ry")
+    rx = te.reduce_axis((0, kernel_w), name="rx")
+
+    out_channel_chunk = in_channel_chunk
+
+    conv = te.compute(
+        (batch, out_height, out_width, out_channel_chunk, channel_block),
+        lambda nn, yy, xx, ffc, ffb: te.sum(
+            (temp[nn, yy * stride_h + ry * dilation_h, xx * stride_w + rx * dilation_w, ffc, ffb]
+            * Filter[ry, rx, ffc, 1, ffb]).astype(args["accumulator"]),
+            axis=[ry, rx],
+        ),
+        tag="depthwise_conv2d_nhwc",
+    )
+
+    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, out_channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype("float16"), tag="dummy_cast")
+    return te.compute((batch, out_height_orig, out_width_orig, out_channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
+
+def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
+    """schedule optimized for batch size = 1"""
+    dummy = output.op.input_tensors[0]
+    conv = dummy.op.input_tensors[0]
+
+    ##### space definition begin #####
+    n, y, x, fc, fb = s[conv].op.axis
+    ry, rx = s[conv].op.reduce_axis
+    cfg.define_split("tile_fc", fc, num_outputs=4)
+    cfg.define_split("tile_y", y, num_outputs=4)
+    cfg.define_split("tile_x", x, num_outputs=4)
+    cfg.define_split("tile_ry", ry, num_outputs=2)
+    cfg.define_split("tile_rx", rx, num_outputs=2)
+    cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
+    cfg.define_knob("unroll_explicit", [0, 1])
+    ##### space definition end #####
+
+    pad_data, kernel = s[conv].op.input_tensors
+    s[pad_data].compute_inline()
+    s[kernel].compute_inline()
+
+    pack_data = pad_data.op.input_tensors[0]
+    s[pack_data].compute_inline()
+
+    ## conv only
+    #if conv.op in s.outputs:
+    #    output = conv
+    #    OL = s.cache_write(conv, "local")
+    ## conv -> output (e.g. when casting conv output)
+    #elif output.op in s.outputs:
+    #    output = s.outputs[0].output(0)
+    #    s[conv].set_scope("local")
+    #    OL = conv
+    ## conv -> injective -> ... -> injective -> output
+    #else:
+    #    # Explicitly mark the output cast to be computed inline
+    #    # the other injective ops are inlined via traverse_inline.
+    #    s[output].compute_inline()
+    #    output = s.outputs[0].output(0)
+    #    s[conv].set_scope("local")
+    #    OL = conv
+    latest = s.outputs[0].output(0)
+
+    # create cache stage
+    def get_texture_storage(shape):
+        limit = 16384
+        if shape[0] * shape[1] * shape[2] < limit and shape[3] < limit:
+            return "texture"
+        elif shape[0] * shape[1] < limit and shape[2] * shape[3] < limit:
+            return "texture:nhwc"
+        else:
+            return "texture:weight"
+
+    AT = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [conv])
+    WT = s.cache_read(kernel, get_texture_storage(kernel.shape), [conv])
+    def copy_to_texture(stage):
+        axes = s[stage].op.axis
+        fused = s[stage].fuse(*axes[:-1])
+        block, thread = s[stage].split(fused, factor=32)
+        s[stage].vectorize(axes[-1])
+        s[stage].bind(block, te.thread_axis("blockIdx.x"))
+        s[stage].bind(thread, te.thread_axis("threadIdx.x"))
+    copy_to_texture(AT)
+    copy_to_texture(WT)
+
+    # tile and bind spatial axes
+    n, y, x, fc, fb = s[dummy].op.axis
+
+    kernel_scope, n = s[dummy].split(n, nparts=1)
+
+    bf, vf, tf, fi = cfg["tile_fc"].apply(s, dummy, fc)
+    by, vy, ty, yi = cfg["tile_y"].apply(s, dummy, y)
+    bx, vx, tx, xi = cfg["tile_x"].apply(s, dummy, x)
+
+    by = s[dummy].fuse(n, by)
+    s[dummy].bind(bf, te.thread_axis("blockIdx.z"))
+    s[dummy].bind(by, te.thread_axis("blockIdx.y"))
+    s[dummy].bind(bx, te.thread_axis("blockIdx.x"))
+    s[dummy].bind(vf, te.thread_axis("vthread"))
+    s[dummy].bind(vy, te.thread_axis("vthread"))
+    s[dummy].bind(vx, te.thread_axis("vthread"))
+    s[dummy].bind(tf, te.thread_axis("threadIdx.z"))
+    s[dummy].bind(ty, te.thread_axis("threadIdx.y"))
+    s[dummy].bind(tx, te.thread_axis("threadIdx.x"))
+    s[dummy].reorder(bf, by, bx, vf, vy, vx, tf, ty, tx, fi, yi, xi, fb)
+    s[dummy].vectorize(fb)
+
+    s[conv].compute_at(s[dummy], tx)
+
+    # tile reduction axes
+    n, y, x, fc, fb = s[conv].op.axis
+
+    ry, rx = s[conv].op.reduce_axis
+    ryo, ryi = cfg["tile_ry"].apply(s, conv, ry)
+    rxo, rxi = cfg["tile_rx"].apply(s, conv, rx)
+
+    s[conv].reorder(ryo, rxo, ryi, rxi, n, y, x, fc, fb)
+    s[conv].vectorize(fb)
+    #s[OL].unroll()
+
+    # unroll
+    s[dummy].pragma(kernel_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
+    s[dummy].pragma(kernel_scope, "unroll_explicit", cfg["unroll_explicit"].val)
+
+    s[latest].compute_root()
+    axes = s[latest].op.axis
+    fused = s[latest].fuse(*axes[:-1])
+    N, OH, OW, OC = get_const_tuple(latest.shape)
+
+    if OC < 32:
+        block, thread = s[latest].split(fused, factor=32)
+        s[latest].bind(block, te.thread_axis("blockIdx.x"))
+        s[latest].bind(thread, te.thread_axis("threadIdx.x"))
+    else:
+        s[latest].bind(fused, te.thread_axis("blockIdx.x"))
+        s[latest].bind(*axes[-1:], te.thread_axis("threadIdx.x"))
+
+    if output != latest:
+        s[output].compute_inline()
+
+    N, OH, OW, OC = get_const_tuple(latest.shape)
+    #KH, KW, O, I = get_const_tuple(kernel.shape)
+    KH, KW, O, I = get_const_tuple(kernel.op.input_tensors[0].shape)
+    KHKW = KH*KW
+
+    if isinstance(N, int):
+        cfg.add_flop(2 * N * OH * OW * OC * KHKW)
