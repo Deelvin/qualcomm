@@ -105,25 +105,39 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
 
     out_height_orig = out_height = simplify((in_height - dilated_kernel_h + pad_top + pad_down) // stride_h + 1)
     out_width_orig = out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
-    # compute graph
-    pad_before = [0, 0, pad_top, pad_left, 0]
-    pad_after = [0, 0, pad_down, pad_right, 0]
-
     # can output shape be divded by 2 or even 4?
     # if it cannot be divided, need to extend for further help with split
+    # theortically there should be addition padding for inputs, but it will be optimized by
+    # cache_read InferBound. We must proceed pad here exactly to produce tensor which is
+    # required for calculation of original out size, not more! In other case intermediate
+    # tensor might be allcoated with less sizes while compute will try to fill the expanded
+    # one - data discrepancy as a result
+    # And in case of textures it is not a problem if we provide texture of less size because
+    # 1. It is not important which valuses would be for extra calc - these calculations are
+    #    required only for better utilizatin of GPU fit to working groups
+    # 2. When we request pixel out opf bound, texture will handle this correctly. As mentioned
+    #    above, the value itself is not important
     if out_height % 2 != 0:
         out_height += 1
-        pad_after[2] = pad_after[2] + stride_h
     if out_width % 2 != 0:
         out_width += 1
-        pad_after[3] = pad_after[3] + stride_w
 
     if out_height % 4 != 0:
         out_height += 2
-        pad_after[2] = pad_after[2] + 2 * stride_h
     if out_width % 4 != 0:
         out_width += 2
-        pad_after[3] = pad_after[3] + 2 * stride_w
+    # compute graph
+    pad_before = [0, 0, pad_top, pad_left, 0]
+    pad_after = [0, 0, pad_down, pad_right, 0]
+    # calculation of real used input size:
+    input_latest_w = (out_width_orig - 1) * stride_w + (kernel_w - 1) * dilation_w + 1
+    input_latest_h = (out_height_orig - 1) * stride_h + (kernel_h - 1) * dilation_h + 1
+    if input_latest_w < in_width + pad_before[3] + pad_after[3]:
+        print("paded data is wider then required for convolution")
+        pad_after[3] -= in_width + pad_before[3] + pad_after[3] - input_latest_w
+    if input_latest_h < in_height + pad_before[2] + pad_after[2]:
+        print("paded data is higher then required for convolution")
+        pad_after[2] -= in_height + pad_before[2] + pad_after[2] - input_latest_h
 
     temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
 
@@ -177,11 +191,11 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     n, fc, y, x, fb = s[conv].op.axis
     rcc, rcb, ry, rx = s[conv].op.reduce_axis
     cfg.define_split("tile_fc", fc, num_outputs=3,
-                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] >= 2 and entity.size[2] < 128 )
+                filter=lambda entity: entity.size[1] <= 8 and entity.size[2] >= 2 and entity.size[2] < 128 )
     cfg.define_split("tile_y", y, num_outputs=3,
-                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] < 16 )
+                filter=lambda entity: entity.size[1] <= 8 and entity.size[2] <= 16 )
     cfg.define_split("tile_x", x, num_outputs=3,
-                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] < 16 )
+                filter=lambda entity: entity.size[1] <= 8 and entity.size[2] <= 16 )
 
     cfg.define_split("tile_rcc", rcc, num_outputs=2)
     cfg.define_split("tile_ry", ry, num_outputs=2)
