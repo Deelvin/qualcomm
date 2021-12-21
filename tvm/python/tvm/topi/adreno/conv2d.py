@@ -149,25 +149,38 @@ def compute_conv2d_NHWC_HWIO(Input, Filter, stride, padding, dilation, out_dtype
         tag="filter_pack",
     )
 
-    # compute graph
-    pad_before = [0, 0, pad_top, pad_left, 0]
-    pad_after = [0, 0, pad_down, pad_right, 0]
-
     # can output shape be divded by 2 or even 4?
     # if it cannot be divided, need to extend for further help with split
+    # theortically there should be addition padding for inputs, but it will be optimized by
+    # cache_read InferBound. We must proceed pad here exactly to produce tensor which is
+    # required for calculation of original out size, not more! In other case intermediate
+    # tensor might be allcoated with less sizes while compute will try to fill the expanded
+    # one - data discrepancy as a result
+    # And in case of textures it is not a problem if we provide texture of less size because
+    # 1. It is not important which valuses would be for extra calc - these calculations are
+    #    required only for better utilizatin of GPU fit to working groups
+    # 2. When we request pixel out opf bound, texture will handle this correctly. As mentioned
+    #    above, the value itself is not important
     if out_height % 2 != 0:
         out_height += 1
-        pad_after[2] = pad_after[2] + stride_h
     if out_width % 2 != 0:
         out_width += 1
-        pad_after[3] = pad_after[3] + stride_w
 
     if out_height % 4 != 0:
         out_height += 2
-        pad_after[2] = pad_after[2] + 2 * stride_h
     if out_width % 4 != 0:
         out_width += 2
-        pad_after[3] = pad_after[3] + 2 * stride_w
+
+    # compute graph
+    pad_before = [0, pad_top, pad_left, 0, 0]
+    pad_after = [0, pad_down, pad_right, 0, 0]
+    # calculation of real used input size:
+    input_latest_w = (out_width_orig - 1) * stride_w + (kernel_w - 1) * dilation_w + 1
+    input_latest_h = (out_height_orig - 1) * stride_h + (kernel_h - 1) * dilation_h + 1
+    if input_latest_w < in_width + pad_before[3] + pad_after[3]:
+        pad_after[3] -= in_width + pad_before[3] + pad_after[3] - input_latest_w
+    if input_latest_h < in_height + pad_before[2] + pad_after[2]:
+        pad_after[2] -= in_height + pad_before[2] + pad_after[2] - input_latest_h
 
     temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
 
@@ -861,11 +874,8 @@ def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation,
     else:
         dilation_h, dilation_w = dilation
 
-    batch, in_height, in_width, in_channel = Input.shape
-    kernel_h, kernel_w, out_channels, _ = Filter.shape
-    #kernel_h, kernel_w, channel_multiplier, _ = Filter.shape
-    #batch, channel_chunk, in_height, in_width, channel_block = Input.shape
-    #_, channel_multiplier, kernel_h, kernel_w, _ = Filter.shape
+    batch, in_height, in_width, channels = Input.shape
+    kernel_h, kernel_w, _, _ = Filter.shape
 
     # compute the output shape
     dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
@@ -878,62 +888,73 @@ def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation,
     out_width_orig = out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
 
     channel_block = 4
-    in_channel_chunk = in_channel // channel_block
-    num_filter_chunk = out_channels // channel_block
+    channel_chunk = channels // channel_block
+    num_filter_chunk = 1
 
     # compute:
     Input = te.compute(
-        [batch, in_height, in_width, in_channel_chunk, channel_block],
+        [batch, in_height, in_width, channel_chunk, channel_block],
         lambda nn, yy, xx, icc, icb: Input[nn, yy, xx, icc * 4 + icb],
         name="input_pack",
         tag="input_pack",
     )
     Filter = te.compute(
-        [kernel_h, kernel_w, in_channel, num_filter_chunk, channel_block],
-        lambda kh, kw, ic, nfc, nfb: Filter[kh, kw, nfc * 4 + nfb, ic],
+        [kernel_h, kernel_w, channel_chunk, num_filter_chunk, channel_block],
+        lambda kh, kw, ifc, nfc, cb: Filter[kh, kw, ifc * 4 + cb, nfc],
         name="filter_pack",
         tag="filter_pack",
     )
 
-    # compute graph
-    pad_before = [0, 0, pad_top, pad_left, 0]
-    pad_after = [0, 0, pad_down, pad_right, 0]
-
     # can output shape be divded by 2 or even 4?
     # if it cannot be divided, need to extend for further help with split
+    # theortically there should be addition padding for inputs, but it will be optimized by
+    # cache_read InferBound. We must proceed pad here exactly to produce tensor which is
+    # required for calculation of original out size, not more! In other case intermediate
+    # tensor might be allcoated with less sizes while compute will try to fill the expanded
+    # one - data discrepancy as a result
+    # And in case of textures it is not a problem if we provide texture of less size because
+    # 1. It is not important which valuses would be for extra calc - these calculations are
+    #    required only for better utilizatin of GPU fit to working groups
+    # 2. When we request pixel out opf bound, texture will handle this correctly. As mentioned
+    #    above, the value itself is not important
     if out_height % 2 != 0:
         out_height += 1
-        pad_after[2] = pad_after[2] + stride_h
     if out_width % 2 != 0:
         out_width += 1
-        pad_after[3] = pad_after[3] + stride_w
 
     if out_height % 4 != 0:
         out_height += 2
-        pad_after[2] = pad_after[2] + 2 * stride_h
     if out_width % 4 != 0:
         out_width += 2
-        pad_after[3] = pad_after[3] + 2 * stride_w
+
+    # compute graph
+    pad_before = [0, pad_top, pad_left, 0, 0]
+    pad_after = [0, pad_down, pad_right, 0, 0]
+    # calculation of real used input size:
+    input_latest_w = (out_width_orig - 1) * stride_w + (kernel_w - 1) * dilation_w + 1
+    input_latest_h = (out_height_orig - 1) * stride_h + (kernel_h - 1) * dilation_h + 1
+    if input_latest_w < in_width + pad_before[3] + pad_after[3]:
+        pad_after[3] -= in_width + pad_before[3] + pad_after[3] - input_latest_w
+    if input_latest_h < in_height + pad_before[2] + pad_after[2]:
+        pad_after[2] -= in_height + pad_before[2] + pad_after[2] - input_latest_h
 
     temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
 
     ry = te.reduce_axis((0, kernel_h), name="ry")
     rx = te.reduce_axis((0, kernel_w), name="rx")
 
-    out_channel_chunk = in_channel_chunk
-
     conv = te.compute(
-        (batch, out_height, out_width, out_channel_chunk, channel_block),
+        (batch, out_height, out_width, channel_chunk, channel_block),
         lambda nn, yy, xx, ffc, ffb: te.sum(
             (temp[nn, yy * stride_h + ry * dilation_h, xx * stride_w + rx * dilation_w, ffc, ffb]
-            * Filter[ry, rx, ffc, 1, ffb]).astype(args["accumulator"]),
+            * Filter[ry, rx, ffc, 0, ffb]).astype(args["accumulator"]),
             axis=[ry, rx],
         ),
         tag="depthwise_conv2d_nhwc",
     )
 
-    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, out_channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype("float16"), tag="dummy_cast")
-    return te.compute((batch, out_height_orig, out_width_orig, out_channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
+    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype("float16"), tag="dummy_cast")
+    return te.compute((batch, out_height_orig, out_width_orig, channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
 
 def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
     """schedule optimized for batch size = 1"""
