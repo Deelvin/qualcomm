@@ -214,7 +214,7 @@ def compute_conv2d_NHWC_HWIO(Input, Filter, stride, padding, dilation, out_dtype
         tag="conv2d_nhwc",
     )
 
-    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, num_filter_chunk, num_filter_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype("float16"), tag="dummy_cast")
+    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, num_filter_chunk, num_filter_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype(args["accumulator"]), tag="dummy_cast")
     return te.compute((batch, out_height_orig, out_width_orig, out_channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
 
 def schedule_conv2d_NHWC(cfg, s, output, args={}):
@@ -973,7 +973,7 @@ def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation,
         tag="depthwise_conv2d_nhwc",
     )
 
-    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype("float16"), tag="dummy_cast")
+    dummy_cast = te.compute((batch, out_height_orig, out_width_orig, channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype(args["accumulator"]), tag="dummy_cast")
     return te.compute((batch, out_height_orig, out_width_orig, channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
 
 def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
