@@ -133,10 +133,8 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
     input_latest_w = (out_width_orig - 1) * stride_w + (kernel_w - 1) * dilation_w + 1
     input_latest_h = (out_height_orig - 1) * stride_h + (kernel_h - 1) * dilation_h + 1
     if input_latest_w < in_width + pad_before[3] + pad_after[3]:
-        print("paded data is wider then required for convolution")
         pad_after[3] -= in_width + pad_before[3] + pad_after[3] - input_latest_w
     if input_latest_h < in_height + pad_before[2] + pad_after[2]:
-        print("paded data is higher then required for convolution")
         pad_after[2] -= in_height + pad_before[2] + pad_after[2] - input_latest_h
 
     temp = nn.pad(Input, pad_before, pad_after, name="pad_temp")
