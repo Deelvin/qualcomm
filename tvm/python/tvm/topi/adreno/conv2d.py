@@ -31,9 +31,19 @@ def conv2d_nhwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float1
     args={"shared" : False, "accumulator" : "float16"}
     return compute_conv2d_NHWC_HWIO(data, kernel, strides, padding, dilation, out_dtype, args=args)
 
+@autotvm.register_topi_compute("conv2d_nhwc_acc32.image2d")
+def conv2d_nhwc_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):
+    """Compute conv2d with NCHWc layout"""
+    args={"shared" : False, "accumulator" : "float32"}
+    return compute_conv2d_NHWC_HWIO(data, kernel, strides, padding, dilation, out_dtype, args=args)
+
 @autotvm.register_topi_schedule("conv2d_nhwc.image2d")
 def schedule_conv2d_nhwc(cfg, outs):
     return schedule_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc16")
+
+@autotvm.register_topi_schedule("conv2d_nhwc_acc32.image2d")
+def schedule_conv2d_nhwc_acc32(cfg, outs):
+    return schedule_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc32")
 
 @autotvm.register_topi_compute("depthwise_conv2d_nhwc.image2d")
 def depthwise_conv2d_nhwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):
@@ -41,9 +51,19 @@ def depthwise_conv2d_nhwc(cfg, data, kernel, strides, padding, dilation, out_dty
     args={"shared" : False, "accumulator" : "float16"}
     return compute_depthwise_conv2d_NHWC_HWOI(data, kernel, strides, padding, dilation, out_dtype, args=args)
 
+@autotvm.register_topi_compute("depthwise_conv2d_nhwc_acc32.image2d")
+def depthwise_conv2d_nhwc_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):
+    """Compute depthwise_conv2d with NHWC layout"""
+    args={"shared" : False, "accumulator" : "float32"}
+    return compute_depthwise_conv2d_NHWC_HWOI(data, kernel, strides, padding, dilation, out_dtype, args=args)
+
 @autotvm.register_topi_schedule("depthwise_conv2d_nhwc.image2d")
 def schedule_depthwise_conv2d_nhwc(cfg, outs):
     return schedule_depthwise_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc16")
+
+@autotvm.register_topi_schedule("depthwise_conv2d_nhwc_acc32.image2d")
+def schedule_depthwise_conv2d_nhwc_acc32(cfg, outs):
+    return schedule_depthwise_conv2d_nhwc_impl(cfg, outs, tag="cast_from_acc32")
 
 @autotvm.register_topi_compute("conv2d_nchwc.image2d")
 def conv2d_nchwc(cfg, data, kernel, strides, padding, dilation, out_dtype="float16"):

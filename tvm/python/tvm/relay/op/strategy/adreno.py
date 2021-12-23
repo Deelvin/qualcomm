@@ -56,11 +56,18 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
             # )
         elif data_layout == "NHWC" and kernel_layout == "HWIO":
             if data.shape[-1] % 4 == 0:
+                if out_type == "float16":
+                    strategy.add_implementation(
+                        wrap_compute_conv2d(topi.adreno.conv2d_nhwc),
+                        wrap_topi_schedule(topi.adreno.schedule_conv2d_nhwc),
+                        name="conv2d_nhwc.image2d",
+                        plevel=10
+                    )
                 strategy.add_implementation(
-                    wrap_compute_conv2d(topi.adreno.conv2d_nhwc),
-                    #wrap_compute_conv2d(topi.cuda.conv2d_nhwc),
-                    wrap_topi_schedule(topi.adreno.schedule_conv2d_nhwc),
-                    name="conv2d_nhwc.image2d",
+                    wrap_compute_conv2d(topi.adreno.conv2d_nhwc_acc32),
+                    wrap_topi_schedule(topi.adreno.schedule_conv2d_nhwc_acc32),
+                    name="conv2d_nhwc_acc32.image2d",
+                    plevel=20
                 )
             else:
                 strategy.add_implementation(
@@ -93,10 +100,18 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
             )
         elif data_layout == "NHWC" and kernel_layout == "HWOI":
             if data.shape[-1] % 4 == 0:
+                if out_type == "float16":
+                    strategy.add_implementation(
+                        wrap_compute_conv2d(topi.adreno.depthwise_conv2d_nhwc),
+                        wrap_topi_schedule(topi.adreno.schedule_depthwise_conv2d_nhwc),
+                        name="depthwise_conv2d_nhwc.image2d",
+                        plevel=10
+                    )
                 strategy.add_implementation(
-                    wrap_compute_conv2d(topi.adreno.depthwise_conv2d_nhwc),
-                    wrap_topi_schedule(topi.adreno.schedule_depthwise_conv2d_nhwc),
-                    name="depthwise_conv2d_nhwc.image2d",
+                    wrap_compute_conv2d(topi.adreno.depthwise_conv2d_nhwc_acc32),
+                    wrap_topi_schedule(topi.adreno.schedule_depthwise_conv2d_nhwc_acc32),
+                    name="depthwise_conv2d_nhwc_acc32.image2d",
+                    plevel=20
                 )
             else:
                 strategy.add_implementation(
