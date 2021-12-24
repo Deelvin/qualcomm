@@ -230,8 +230,8 @@ def schedule_conv2d_NCHWc_tpack(cfg, s, output, args={}):
     cfg.define_split("tile_rcc", rcc, num_outputs=2)
     cfg.define_split("tile_ry", ry, num_outputs=2)
     cfg.define_split("tile_rx", rx, num_outputs=2)
-    # cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
-    # cfg.define_knob("unroll_explicit", [0, 1])
+    cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
+    cfg.define_knob("unroll_explicit", [0, 1])
 
     cfg.multi_filter(filter=lambda entity: entity["tile_fc"].size[2] * entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
     ##### space definition end #####
@@ -316,8 +316,8 @@ def schedule_conv2d_NCHWc_tpack(cfg, s, output, args={}):
     s[conv].vectorize(fb)
     s[conv].unroll(rcb)
     # unroll
-    # s[dummy].pragma(kernel_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
-    # s[dummy].pragma(kernel_scope, "unroll_explicit", cfg["unroll_explicit"].val)
+    s[dummy].pragma(kernel_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
+    s[dummy].pragma(kernel_scope, "unroll_explicit", cfg["unroll_explicit"].val)
 
     s[latest].compute_root()
 
