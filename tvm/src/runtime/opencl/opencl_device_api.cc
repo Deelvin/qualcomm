@@ -198,7 +198,6 @@ cl_mem OpenCLWorkspace::AllocTexture(TVMContext ctx, size_t width, size_t height
   cl_channel_type cl_type = DTypeToOpenCLChannelType(type_hint);
   cl_image_format format = { CL_RGBA, cl_type };
   cl_image_desc descriptor = { CL_MEM_OBJECT_IMAGE2D, width, height, 0, 0, 0, 0, 0, 0 };
-  std::cout << "AllocTexture, width: " << width << ", height: " << height << std::endl;
   cl_mem mptr = clCreateImage(
     this->context,
     CL_MEM_READ_WRITE,

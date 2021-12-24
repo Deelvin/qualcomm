@@ -199,7 +199,7 @@ def compute_conv2d_NCHWc_tpack(Input, Filter, stride, padding, dilation, out_dty
     # leads to the crash in runtime
     # due to this reason we had to use such dummy cast and compute_at to create such intermediate
     # accumulator with local scope
-    dummy_cast = te.compute((batch, num_filter_chunk, out_height_orig, out_width_orig, 4), lambda n,fc,y,x,fb: conv[n,fc,y,x,fb].astype(args["accumulator"]), tag="dummy_cast")
+    dummy_cast = te.compute((batch, num_filter_chunk, out_height_orig, out_width_orig, 4), lambda n,fc,y,x,fb: conv[n,fc,y,x,fb].astype(out_dtype), tag="dummy_cast")
 
     return te.compute((batch, out_channles, out_height_orig, out_width_orig), lambda n,c,y,x: dummy_cast[n,c // 4,y,x,c % 4], tag="cast_from_acc" + args["accumulator"][-2:])
 
