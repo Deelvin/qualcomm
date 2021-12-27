@@ -175,8 +175,7 @@ void* OpenCLWorkspace::AllocDataSpace(TVMContext ctx, int ndim, const int64_t* s
                    << "provided shape is rank " << ndim;
 
   OpenCLBuffer* mptr = new OpenCLBuffer(mem_scope);
-  size_t axis = DefaultTextureLayoutSeparator(ndim, mem_scope.value());
-  auto texture = ApplyTexture2DFlattening<int64_t>(shape, ndim, axis);
+  auto texture = ApplyTexture2DFlattening<int64_t>(shape, ndim);
   mptr->buffer = AllocTexture(ctx, texture.width, texture.height, dtype);
   return mptr;
 }

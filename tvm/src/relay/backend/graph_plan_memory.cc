@@ -515,12 +515,11 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     Texture2DShape GetSize2D(StorageToken* prototype) {
       const TensorTypeNode* ttype = prototype->ttype;
       ICHECK(ttype != nullptr);
-      size_t axis = runtime::DefaultTextureLayoutSeparator(ttype->shape.size(), prototype->storage_scope);
       struct Shape {
         const Array<PrimExpr>& shape;
         int64_t operator[](size_t i) const { return *tir::as_const_int(shape[i]); }
       };
-      return runtime::ApplyTexture2DFlattening<int64_t>(Shape{ttype->shape}, ttype->shape.size(), axis);
+      return runtime::ApplyTexture2DFlattening<int64_t>(Shape{ttype->shape}, ttype->shape.size());
     }
   private:
     struct MemBlock {

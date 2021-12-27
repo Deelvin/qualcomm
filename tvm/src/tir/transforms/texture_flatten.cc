@@ -136,14 +136,13 @@ class TextureFlattener : public TextureLoweringBase {
       body = this->VisitStmt(op->body);
       ICHECK(op->bounds.size() >= 3) << "Only 2d RGBA texture is currently supported";
       int vec_length = static_cast<int>(op->bounds.back()->extent.as<IntImmNode>()->value);
-      ICHECK(vec_length == 4 || vec_length == 1) << "FCD of texture must be vector of length 1 or 4 (RGBA)";
+      ICHECK(vec_length == 4 || vec_length == 1) << "FCD of texture must be vector of length 1 or 4 (RGBA), actual: " << vec_length;
 
       struct Shape {
         const Array<Range>& bounds;
         PrimExpr operator[](size_t i) const { return bounds[i]->extent; }
       };
-      size_t axis = DefaultTextureLayoutSeparator(op->bounds.size(), storage_scope);
-      auto texture = ApplyTexture2DFlattening<PrimExpr>(Shape{op->bounds}, op->bounds.size(), axis);
+      auto texture = ApplyTexture2DFlattening<PrimExpr>(Shape{op->bounds}, op->bounds.size());
       Array<PrimExpr> args = {texture.width, texture.height};
       stmt = LetStmt(buffer_var, Call(buffer_var.dtype(), builtin::texture2d_alloca(), args), body);
     }
@@ -196,7 +195,7 @@ class TextureFlattener : public TextureLoweringBase {
     }
     Array<PrimExpr> row_dims, row_indices, col_dims, col_indices;
     for (size_t i = 0; i < op->buffer->shape.size()-1; i++) {
-      if (i < DefaultTextureLayoutSeparator(op->buffer->shape.size(), GetStorageScope(buffer))) {
+      if (i < DefaultTextureLayoutSeparator(op->buffer->shape.size(), op->buffer->shape)) {
         col_dims.push_back(op->buffer->shape[i]);
         col_indices.push_back(op->indices[i]);
       } else {
