@@ -19,6 +19,7 @@
 import tvm
 from tvm import te
 from tvm import autotvm
+import numpy
 
 from tvm.topi import nn
 from tvm.topi.utils import simplify
@@ -180,6 +181,13 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
             tag="conv2d_nchwc",
         )
     return te.compute((batch, num_filter_chunk, out_height_orig, out_width_orig, num_filter_block), lambda n,fc,y,x,fb: conv[n,fc,y,x,fb].astype(out_dtype), tag="cast_from_acc" + args["accumulator"][-2:])
+def getDiv(value, start):
+    div = 1
+    for d in range(start,0,-1):
+        if (value % d) == 0:
+            div = d
+            break
+    return div
 
 def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
     """schedule optimized for batch size = 1"""
@@ -247,7 +255,10 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
         def copy_to_texture(stage):
             axes = s[stage].op.axis
             fused = s[stage].fuse(*axes[:-1])
-            block, thread = s[stage].split(fused, factor=32)
+            shape = get_const_tuple(stage.shape)
+            ftc = numpy.prod(shape[:-1])
+            div = getDiv(ftc, 64)
+            block, thread = s[stage].split(fused, factor=div)
             s[stage].vectorize(axes[-1])
             s[stage].bind(block, te.thread_axis("blockIdx.x"))
             s[stage].bind(thread, te.thread_axis("threadIdx.x"))
@@ -265,7 +276,10 @@ def schedule_conv2d_NCHWc_KCRSk(cfg, s, output, args={}):
         def copy_to_texture(stage):
             axes = s[stage].op.axis
             fused = s[stage].fuse(*axes[:-1])
-            block, thread = s[stage].split(fused, factor=32)
+            shape = get_const_tuple(stage.shape)
+            ftc = numpy.prod(shape[:-1])
+            div = getDiv(ftc, 64)
+            block, thread = s[stage].split(fused, factor=div)
             s[stage].vectorize(axes[-1])
             s[stage].bind(block, te.thread_axis("blockIdx.x"))
             s[stage].bind(thread, te.thread_axis("threadIdx.x"))

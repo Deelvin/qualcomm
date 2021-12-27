@@ -205,7 +205,7 @@ def compute_conv2d_NCHWc_tpack(Input, Filter, stride, padding, dilation, out_dty
 
 def getDiv(value, start):
     div = 1
-    for d in range(start,0,-4):
+    for d in range(start,0,-1):
         if (value % d) == 0:
             div = d
             break
