@@ -36,12 +36,13 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
 
     if groups == 1:
         if data_layout == "NCHW" and kernel_layout == "OIHW":
-            strategy.add_implementation(
-                wrap_compute_conv2d(topi.adreno.conv2d_nchwc_tpack),
-                wrap_topi_schedule(topi.adreno.schedule_conv2d_nchwc_tpack),
-                name="conv2d_nchwc_tpack.image2d",
-                plevel=10
-            )
+            if out_type == "float16":
+                strategy.add_implementation(
+                    wrap_compute_conv2d(topi.adreno.conv2d_nchwc_tpack),
+                    wrap_topi_schedule(topi.adreno.schedule_conv2d_nchwc_tpack),
+                    name="conv2d_nchwc_tpack.image2d",
+                    plevel=10
+                )
 
             strategy.add_implementation(
                 wrap_compute_conv2d(topi.adreno.conv2d_nchwc_tpack_acc32),
