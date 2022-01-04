@@ -258,7 +258,7 @@ class ModelImporter(object):
 
         input_shape = {"input_1": (1, 416, 416, 3)}
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape,
-                                        outputs=["conv2d_59/BiasAdd","conv2d_67/BiasAdd"]) #,"conv2d_75/BiasAdd"
+                                        outputs=["conv2d_59/BiasAdd","conv2d_67/BiasAdd", "conv2d_75/BiasAdd"])
 
         from tvm.relay import transform
         #mod = transform.DynamicToStatic()(mod)
