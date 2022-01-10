@@ -1,0 +1,340 @@
+cting tasks
+Tuning kernels
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  1/23]  Current/Best:    0.00/ 199.15 GFLOPS | Progress: (333/333) | 1462.87 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 96, 52, 52, 4), 'float16'), ('TENSOR', (32, 384, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 96, 52, 52, 4), 'float16'), ('TENSOR', (32, 384, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  2/23]  Current/Best:  272.32/ 308.81 GFLOPS | Progress: (333/333) | 1793.11 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 52, 52, 256), 'float16'), ('TENSOR', (1, 1, 256, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 52, 52, 256), 'float16'), ('TENSOR', (1, 1, 256, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  3/23]  Current/Best:  316.72/ 329.67 GFLOPS | Progress: (333/333) | 2188.20 sTask:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  4/23]  Current/Best:    6.00/ 165.04 GFLOPS | Progress: (20/333) | 65.40 s Done.
+ Done.
+[Task  4/23]  Current/Best:  129.51/ 165.04 GFLOPS | Progress: (22/333) | 71.29 s Done.
+ Done.
+[Task  4/23]  Current/Best:   90.43/ 165.04 GFLOPS | Progress: (24/333) | 74.48 s Done.
+ Done.
+[Task  4/23]  Current/Best:    3.47/ 165.04 GFLOPS | Progress: (26/333) | 81.03 s Done.
+ Done.
+[Task  4/23]  Current/Best:    1.97/ 165.04 GFLOPS | Progress: (28/333) | 91.72 s Done.
+ Done.
+[Task  4/23]  Current/Best:    1.09/ 165.04 GFLOPS | Progress: (30/333) | 100.64 s Done.
+ Done.
+[Task  4/23]  Current/Best:  147.60/ 165.04 GFLOPS | Progress: (32/333) | 103.89 s Done.
+ Done.
+[Task  4/23]  Current/Best:   96.93/ 165.04 GFLOPS | Progress: (34/333) | 106.97 s Done.
+ Done.
+[Task  4/23]  Current/Best:  107.72/ 165.04 GFLOPS | Progress: (36/333) | 109.89 s Done.
+ Done.
+[Task  4/23]  Current/Best:   63.05/ 165.04 GFLOPS | Progress: (38/333) | 112.88 s Done.
+ Done.
+[Task  4/23]  Current/Best:    0.58/ 165.04 GFLOPS | Progress: (40/333) | 144.49 s Done.
+ Done.
+[Task  4/23]  Current/Best:  108.83/ 165.04 GFLOPS | Progress: (42/333) | 150.29 s Done.
+ Done.
+[Task  4/23]  Current/Best:    0.85/ 165.04 GFLOPS | Progress: (44/333) | 161.90 s Done.
+ Done.
+[Task  4/23]  Current/Best:   26.50/ 165.04 GFLOPS | Progress: (46/333) | 165.33 s Done.
+ Done.
+[Task  4/23]  Current/Best:  113.17/ 165.04 GFLOPS | Progress: (48/333) | 168.25 s Done.
+ Done.
+[Task  4/23]  Current/Best:  148.14/ 165.04 GFLOPS | Progress: (50/333) | 186.23 s Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:  140.83/ 165.04 GFLOPS | Progress: (52/333) | 196.68 s Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:  131.73/ 165.04 GFLOPS | Progress: (54/333) | 199.82 s Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:    0.50/ 165.04 GFLOPS | Progress: (56/333) | 220.48 s Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:  122.73/ 165.04 GFLOPS | Progress: (58/333) | 223.12 s Done.
+ Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:  105.76/ 165.04 GFLOPS | Progress: (60/333) | 226.23 s Done.
+ Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:  157.15/ 165.04 GFLOPS | Progress: (62/333) | 228.99 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task  4/23]  Current/Best:    7.43/ 192.55 GFLOPS | Progress: (333/333) | 1667.81 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 192, 26, 26, 4), 'float16'), ('TENSOR', (64, 768, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 192, 26, 26, 4), 'float16'), ('TENSOR', (64, 768, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  5/23]  Current/Best:  266.09/ 286.62 GFLOPS | Progress: (333/333) | 2036.91 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 26, 26, 512), 'float16'), ('TENSOR', (1, 1, 512, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 26, 26, 512), 'float16'), ('TENSOR', (1, 1, 512, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  6/23]  Current/Best:    3.44/ 286.95 GFLOPS | Progress: (333/333) | 2256.23 sTask:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 416, 416, 3), 'float16'), ('TENSOR', (3, 3, 3, 32), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 416, 416, 3), 'float16'), ('TENSOR', (3, 3, 3, 32), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task  7/23]  Current/Best:    0.00/   0.00 GFLOPS | Progress: (0/333) | 0.00 s Done.
+ Done.
+ Done.
+ Done.
+[Task  7/23]  Current/Best:    6.84/   6.84 GFLOPS | Progress: (2/333) | 51.83 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task  7/23]  Current/Best:   91.21/ 129.95 GFLOPS | Progress: (333/333) | 3264.38 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 8, 417, 417, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 8, 417, 417, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  8/23]  Current/Best:  176.20/ 328.48 GFLOPS | Progress: (333/333) | 4172.52 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 208, 208, 4), 'float16'), ('TENSOR', (8, 64, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 208, 208, 4), 'float16'), ('TENSOR', (8, 64, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task  9/23]  Current/Best:  185.28/ 190.26 GFLOPS | Progress: (333/333) | 2006.54 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 8, 208, 208, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 8, 208, 208, 4), 'float16'), ('TENSOR', (16, 32, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 10/23]  Current/Best:  208.16/ 383.08 GFLOPS | Progress: (333/333) | 4144.38 sTask:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 209, 209, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 209, 209, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 11/23]  Current/Best:  193.46/ 328.07 GFLOPS | Progress: (62/333) | 1585.75 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  245.77/ 346.60 GFLOPS | Progress: (126/333) | 2142.21 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:   24.70/ 346.60 GFLOPS | Progress: (190/333) | 2921.97 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  138.00/ 346.72 GFLOPS | Progress: (254/333) | 3419.68 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  331.93/ 348.28 GFLOPS | Progress: (318/333) | 3978.69 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  130.50/ 348.28 GFLOPS | Progress: (320/333) | 4057.76 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  347.94/ 348.28 GFLOPS | Progress: (322/333) | 4067.25 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  336.35/ 348.28 GFLOPS | Progress: (324/333) | 4077.28 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  336.05/ 348.28 GFLOPS | Progress: (326/333) | 4086.02 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  335.21/ 348.28 GFLOPS | Progress: (328/333) | 4094.35 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  336.13/ 348.28 GFLOPS | Progress: (330/333) | 4107.34 s Done.
+ Done.
+ Done.
+ Done.
+[Task 11/23]  Current/Best:  339.76/ 348.28 GFLOPS | Progress: (332/333) | 4135.53 s Done.
+ Done.
+[Task 11/23]  Current/Best:  336.95/ 348.28 GFLOPS | Progress: (333/333) | 4140.20 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 104, 104, 4), 'float16'), ('TENSOR', (16, 128, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 104, 104, 4), 'float16'), ('TENSOR', (16, 128, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 12/23]  Current/Best:    0.00/   0.00 GFLOPS | Progress: (0/333) | 0.00 s Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:    5.34/  78.90 GFLOPS | Progress: (2/333) | 10.78 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:    0.00/  78.90 GFLOPS | Progress: (4/333) | 59.83 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  133.35/ 133.35 GFLOPS | Progress: (6/333) | 68.84 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  101.40/ 133.35 GFLOPS | Progress: (8/333) | 79.65 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  120.52/ 133.35 GFLOPS | Progress: (10/333) | 96.25 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  141.66/ 141.66 GFLOPS | Progress: (12/333) | 122.51 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  149.53/ 149.53 GFLOPS | Progress: (14/333) | 129.29 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  224.68/ 224.68 GFLOPS | Progress: (16/333) | 135.62 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:   97.64/ 224.68 GFLOPS | Progress: (18/333) | 143.83 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  103.64/ 224.68 GFLOPS | Progress: (20/333) | 164.36 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  221.10/ 224.68 GFLOPS | Progress: (22/333) | 170.63 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  105.08/ 224.68 GFLOPS | Progress: (24/333) | 176.82 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  119.54/ 224.68 GFLOPS | Progress: (26/333) | 182.98 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:    0.00/ 224.68 GFLOPS | Progress: (28/333) | 217.38 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  134.32/ 224.68 GFLOPS | Progress: (30/333) | 225.93 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:   37.88/ 224.68 GFLOPS | Progress: (32/333) | 233.25 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:   57.61/ 224.68 GFLOPS | Progress: (34/333) | 256.30 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  206.27/ 224.68 GFLOPS | Progress: (36/333) | 282.90 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  198.84/ 224.68 GFLOPS | Progress: (38/333) | 295.01 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  147.47/ 224.68 GFLOPS | Progress: (40/333) | 310.77 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  209.63/ 224.68 GFLOPS | Progress: (42/333) | 317.01 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  192.08/ 224.68 GFLOPS | Progress: (44/333) | 323.73 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  192.36/ 224.68 GFLOPS | Progress: (46/333) | 330.36 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  193.59/ 224.68 GFLOPS | Progress: (48/333) | 336.68 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  213.08/ 224.68 GFLOPS | Progress: (50/333) | 344.12 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:   63.82/ 224.68 GFLOPS | Progress: (52/333) | 350.14 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  226.30/ 226.30 GFLOPS | Progress: (54/333) | 356.85 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  133.51/ 226.30 GFLOPS | Progress: (56/333) | 365.62 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:   80.30/ 226.30 GFLOPS | Progress: (58/333) | 377.04 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  102.64/ 226.30 GFLOPS | Progress: (60/333) | 383.01 s Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:    0.00/ 226.30 GFLOPS | Progress: (62/333) | 423.24 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 12/23]  Current/Best:  207.61/ 274.22 GFLOPS | Progress: (333/333) | 1982.66 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 16, 104, 104, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 16, 104, 104, 4), 'float16'), ('TENSOR', (32, 64, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 13/23]  Current/Best:  380.91/ 401.06 GFLOPS | Progress: (333/333) | 3328.10 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 105, 105, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 105, 105, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 14/23]  Current/Best:  328.69/ 334.33 GFLOPS | Progress: (333/333) | 3465.94 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 52, 52, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 52, 52, 4), 'float16'), ('TENSOR', (32, 256, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 15/23]  Current/Best:  134.60/ 316.86 GFLOPS | Progress: (333/333) | 1603.12 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 32, 52, 52, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 32, 52, 52, 4), 'float16'), ('TENSOR', (64, 128, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 16/23]  Current/Best:  363.74/ 373.85 GFLOPS | Progress: (333/333) | 2687.54 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 53, 53, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 53, 53, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 17/23]  Current/Best:  287.74/ 307.45 GFLOPS | Progress: (333/333) | 4101.95 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 26, 26, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 26, 26, 4), 'float16'), ('TENSOR', (64, 512, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 18/23]  Current/Best:  185.06/ 295.76 GFLOPS | Progress: (333/333) | 1758.45 sTask:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 64, 26, 26, 4), 'float16'), ('TENSOR', (128, 256, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 19/23]  Current/Best:   87.40/ 290.61 GFLOPS | Progress: (62/333) | 1010.78 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 19/23]  Current/Best:  158.15/ 299.52 GFLOPS | Progress: (126/333) | 1653.16 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 19/23]  Current/Best:  145.83/ 299.52 GFLOPS | Progress: (128/333) | 1856.69 s Done.
+ Done.
+ Done.
+ Done.
+ Done.
+[Task 19/23]  Current/Best:  266.03/ 312.77 GFLOPS | Progress: (333/333) | 3587.06 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 27, 27, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 27, 27, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (2, 2), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 20/23]  Current/Best:    0.00/ 245.69 GFLOPS | Progress: (333/333) | 4693.96 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 256, 13, 13, 4), 'float16'), ('TENSOR', (128, 1024, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 256, 13, 13, 4), 'float16'), ('TENSOR', (128, 1024, 1, 1, 4), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 21/23]  Current/Best:    0.00/ 253.28 GFLOPS | Progress: (333/333) | 1727.14 s Done.
+Task:  Task(func_name=conv2d_nchwc_acc32.image2d, args=(('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nchwc_acc32.image2d', ('TENSOR', (1, 128, 13, 13, 4), 'float16'), ('TENSOR', (256, 512, 3, 3, 4), 'float16'), (1, 1), (1, 1, 1, 1), (1, 1), 'float16'))
+[Task 22/23]  Current/Best:  247.56/ 268.74 GFLOPS | Progress: (333/333) | 4741.92 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 13, 13, 1024), 'float16'), ('TENSOR', (1, 1, 1024, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 13, 13, 1024), 'float16'), ('TENSOR', (1, 1, 1024, 255), 'float16'), (1, 1), (0, 0, 0, 0), (1, 1), 'float16'))
+[Task 23/23]  Current/Best:  171.32/ 174.33 GFLOPS | Progress: (333/333) | 1627.58 s Done.
+Apply best performing tuning profiles:
+Tracker attempting connection on 0.0.0.0:9190
+Tracker connected to remote RPC server
+Using Android OpenCL runtime over RPC
+Uploading binary...
+Evaluating...
+0.243925 secs/iteration
+
+

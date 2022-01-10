@@ -1,0 +1,79 @@
+
+Extracting tasks
+Tuning kernels
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 320), 'float32'), ('TENSOR', (1, 1, 320, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 320), 'float32'), ('TENSOR', (1, 1, 320, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task  1/31]  Current/Best:  129.63/ 222.65 GFLOPS | Progress: (333/333) | 2193.19 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 513, 513, 3), 'float32'), ('TENSOR', (3, 3, 3, 32), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 513, 513, 3), 'float32'), ('TENSOR', (3, 3, 3, 32), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task  2/31]  Current/Best:   44.77/  45.41 GFLOPS | Progress: (333/333) | 2692.31 sTask:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 257, 257, 32), 'float32'), ('TENSOR', (3, 3, 32, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 257, 257, 32), 'float32'), ('TENSOR', (3, 3, 32, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task  3/31]  Current/Best:    0.00/   0.00 GFLOPS | Progress: (0/333) | 0.00 s Done.
+ Done.
+ Done.
+[Task  3/31]  Current/Best:    1.19/   1.19 GFLOPS | Progress: (2/333) | 18.06 s Done.
+ Done.
+ Done.
+[Task  3/31]  Current/Best:   16.62/  17.21 GFLOPS | Progress: (333/333) | 6954.08 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 257, 257, 32), 'float32'), ('TENSOR', (1, 1, 32, 16), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 257, 257, 32), 'float32'), ('TENSOR', (1, 1, 32, 16), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task  4/31]  Current/Best:   32.51/  34.81 GFLOPS | Progress: (333/333) | 2013.56 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 257, 257, 16), 'float32'), ('TENSOR', (1, 1, 16, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 257, 257, 16), 'float32'), ('TENSOR', (1, 1, 16, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task  5/31]  Current/Best:   58.46/  61.27 GFLOPS | Progress: (333/333) | 3943.06 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 257, 257, 96), 'float32'), ('TENSOR', (3, 3, 96, 1), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 257, 257, 96), 'float32'), ('TENSOR', (3, 3, 96, 1), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task  6/31]  Current/Best:    8.50/   9.34 GFLOPS | Progress: (333/333) | 7957.24 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 129, 129, 96), 'float32'), ('TENSOR', (1, 1, 96, 24), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 129, 129, 96), 'float32'), ('TENSOR', (1, 1, 96, 24), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task  7/31]  Current/Best:   59.49/  81.21 GFLOPS | Progress: (333/333) | 2463.12 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (3, 3, 144, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (3, 3, 144, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task  8/31]  Current/Best:   17.14/  19.62 GFLOPS | Progress: (333/333) | 7363.05 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (1, 1, 144, 24), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (1, 1, 144, 24), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task  9/31]  Current/Best:   71.55/  89.24 GFLOPS | Progress: (333/333) | 2721.75 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 129, 129, 24), 'float32'), ('TENSOR', (1, 1, 24, 144), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 129, 129, 24), 'float32'), ('TENSOR', (1, 1, 24, 144), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 10/31]  Current/Best:   53.57/  87.09 GFLOPS | Progress: (333/333) | 2867.92 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (3, 3, 144, 1), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 129, 129, 144), 'float32'), ('TENSOR', (3, 3, 144, 1), 'float32'), (2, 2), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task 11/31]  Current/Best:    8.04/   8.50 GFLOPS | Progress: (333/333) | 4721.33 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 144), 'float32'), ('TENSOR', (1, 1, 144, 32), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 144), 'float32'), ('TENSOR', (1, 1, 144, 32), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 12/31]  Current/Best:   45.66/  79.59 GFLOPS | Progress: (333/333) | 771.57 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (1, 1, 192, 32), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (1, 1, 192, 32), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 13/31]  Current/Best:   62.16/  89.89 GFLOPS | Progress: (333/333) | 805.72 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 32), 'float32'), ('TENSOR', (1, 1, 32, 192), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 32), 'float32'), ('TENSOR', (1, 1, 32, 192), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 14/31]  Current/Best:   73.18/  96.34 GFLOPS | Progress: (333/333) | 879.53 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (3, 3, 192, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (3, 3, 192, 1), 'float32'), (1, 1), (1, 1, 1, 1), (1, 1), 'float32'))
+[Task 15/31]  Current/Best:   17.92/  20.07 GFLOPS | Progress: (333/333) | 5090.12 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (1, 1, 192, 64), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 192), 'float32'), ('TENSOR', (1, 1, 192, 64), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 16/31]  Current/Best:   81.19/ 130.46 GFLOPS | Progress: (333/333) | 1042.00 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 384), 'float32'), ('TENSOR', (1, 1, 384, 64), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 384), 'float32'), ('TENSOR', (1, 1, 384, 64), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 17/31]  Current/Best:   61.68/ 148.77 GFLOPS | Progress: (333/333) | 1321.69 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 64), 'float32'), ('TENSOR', (1, 1, 64, 384), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 64), 'float32'), ('TENSOR', (1, 1, 64, 384), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 18/31]  Current/Best:  122.98/ 157.88 GFLOPS | Progress: (333/333) | 1447.67 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (4, 35, 35, 384), 'float32'), ('TENSOR', (3, 3, 384, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (4, 35, 35, 384), 'float32'), ('TENSOR', (3, 3, 384, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 19/31]  Current/Best:   15.41/  16.04 GFLOPS | Progress: (333/333) | 5886.90 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 384), 'float32'), ('TENSOR', (1, 1, 384, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 384), 'float32'), ('TENSOR', (1, 1, 384, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 20/31]  Current/Best:  108.61/ 164.52 GFLOPS | Progress: (333/333) | 1455.95 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 576), 'float32'), ('TENSOR', (1, 1, 576, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 576), 'float32'), ('TENSOR', (1, 1, 576, 96), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 21/31]  Current/Best:  115.17/ 180.52 GFLOPS | Progress: (333/333) | 1897.11 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 96), 'float32'), ('TENSOR', (1, 1, 96, 576), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 96), 'float32'), ('TENSOR', (1, 1, 96, 576), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 22/31]  Current/Best:   92.85/ 159.20 GFLOPS | Progress: (333/333) | 2246.62 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (4, 35, 35, 576), 'float32'), ('TENSOR', (3, 3, 576, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (4, 35, 35, 576), 'float32'), ('TENSOR', (3, 3, 576, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 23/31]  Current/Best:   18.38/  19.84 GFLOPS | Progress: (333/333) | 5480.70 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 576), 'float32'), ('TENSOR', (1, 1, 576, 160), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 576), 'float32'), ('TENSOR', (1, 1, 576, 160), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 24/31]  Current/Best:  105.07/ 204.90 GFLOPS | Progress: (333/333) | 2068.30 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 960), 'float32'), ('TENSOR', (1, 1, 960, 160), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 960), 'float32'), ('TENSOR', (1, 1, 960, 160), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 25/31]  Current/Best:  136.50/ 214.22 GFLOPS | Progress: (333/333) | 3012.50 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 160), 'float32'), ('TENSOR', (1, 1, 160, 960), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 160), 'float32'), ('TENSOR', (1, 1, 160, 960), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 26/31]  Current/Best:    0.00/ 218.55 GFLOPS | Progress: (333/333) | 3363.69 s Done.
+Task:  Task(func_name=depthwise_conv2d_nhwc_acc32.image2d, args=(('TENSOR', (16, 19, 19, 960), 'float32'), ('TENSOR', (3, 3, 960, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('depthwise_conv2d_nhwc_acc32.image2d', ('TENSOR', (16, 19, 19, 960), 'float32'), ('TENSOR', (3, 3, 960, 1), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 27/31]  Current/Best:   17.81/  18.92 GFLOPS | Progress: (333/333) | 7269.99 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 960), 'float32'), ('TENSOR', (1, 1, 960, 320), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 960), 'float32'), ('TENSOR', (1, 1, 960, 320), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 28/31]  Current/Best:  220.83/ 243.54 GFLOPS | Progress: (333/333) | 4393.27 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 1, 1, 320), 'float32'), ('TENSOR', (1, 1, 320, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 1, 1, 320), 'float32'), ('TENSOR', (1, 1, 320, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 29/31]  Current/Best:    0.48/   0.89 GFLOPS | Progress: (333/333) | 750.40 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 512), 'float32'), ('TENSOR', (1, 1, 512, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 512), 'float32'), ('TENSOR', (1, 1, 512, 256), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 30/31]  Current/Best:  210.83/ 234.14 GFLOPS | Progress: (333/333) | 2495.38 s Done.
+Task:  Task(func_name=conv2d_nhwc_acc32.image2d, args=(('TENSOR', (1, 65, 65, 256), 'float32'), ('TENSOR', (1, 1, 256, 21), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'), kwargs={}, workload=('conv2d_nhwc_acc32.image2d', ('TENSOR', (1, 65, 65, 256), 'float32'), ('TENSOR', (1, 1, 256, 21), 'float32'), (1, 1), (0, 0, 0, 0), (1, 1), 'float32'))
+[Task 31/31]  Current/Best:   28.13/  47.14 GFLOPS | Progress: (333/333) | 1015.64 s Done.
+Apply best performing tuning profiles:
+Tracker attempting connection on 0.0.0.0:9190
+Tracker connected to remote RPC server
+Using Android OpenCL runtime over RPC
+Uploading binary...
+Evaluating...
+0.159244 secs/iteration
+
+
