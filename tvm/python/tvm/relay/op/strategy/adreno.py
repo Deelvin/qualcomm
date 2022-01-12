@@ -93,7 +93,8 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
                 name="depthwise_conv2d_nchw.cuda",
             )
         elif data_layout == "NHWC" and kernel_layout == "HWOI":
-            if data.shape[-1] % 4 == 0:
+            print("data.shape: ", data.shape)
+            if data.shape[-1] >= 4:
                 if out_type.dtype == "float16":
                     strategy.add_implementation(
                         wrap_compute_conv2d(topi.adreno.depthwise_conv2d_nhwc),
@@ -109,9 +110,9 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
                 )
             else:
                 strategy.add_implementation(
-                    wrap_compute_conv2d(topi.cuda.depthwise_conv2d_nhwc),
+                    wrap_compute_conv2d(topi.nn.depthwise_conv2d_nhwc),
                     wrap_topi_schedule(topi.cuda.schedule_depthwise_conv2d_nhwc),
-                    name="depthwise_conv2d_nhwc.image2d",
+                    name="depthwise_conv2d_nhwc.cuda",
                 )
         elif data_layout == "NCHW4c" and kernel_layout == "OIHW4o":
             if out_type.dtype == "float16":

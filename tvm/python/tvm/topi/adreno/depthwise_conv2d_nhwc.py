@@ -17,6 +17,7 @@
 # pylint: disable=invalid-name,unused-variable,unused-argument,no-else-return
 """conv2d schedule on Qualcomm Adreno GPU"""
 import tvm
+import numpy
 from tvm import te
 from tvm import autotvm
 
@@ -56,6 +57,7 @@ def schedule_depthwise_conv2d_nhwc_impl(cfg, outs, tag):
 
     traverse_inline(s, outs[0].op, _callback)
     return s
+
 def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation, out_dtype=None, args={}):
     """Depthwise convolution operator in NCHWc layout. """
     if out_dtype is None:
@@ -87,22 +89,59 @@ def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation,
     out_width_orig = out_width = simplify((in_width - dilated_kernel_w + pad_left + pad_right) // stride_w + 1)
 
     channel_block = 4
+    channel_tail = channels % channel_block
     channel_chunk = channels // channel_block
     num_filter_chunk = 1
 
+    pad_value = tvm.tir.const(0, Input.dtype)
     # compute:
-    Input = te.compute(
-        [batch, in_height, in_width, channel_chunk, channel_block],
-        lambda nn, yy, xx, icc, icb: Input[nn, yy, xx, icc * 4 + icb],
-        name="input_pack",
-        tag="input_pack",
-    )
-    Filter = te.compute(
-        [kernel_h, kernel_w, channel_chunk, num_filter_chunk, channel_block],
-        lambda kh, kw, ifc, nfc, cb: Filter[kh, kw, ifc * 4 + cb, nfc],
-        name="filter_pack",
-        tag="filter_pack",
-    )
+    if channel_tail == 0:
+        Input = te.compute(
+            [batch, in_height, in_width, channel_chunk, channel_block],
+            lambda nn, yy, xx, icc, icb: Input[nn, yy, xx, icc * 4 + icb],
+            name="input_pack",
+            tag="input_pack",
+        )
+        Filter = te.compute(
+            [kernel_h, kernel_w, channel_chunk, num_filter_chunk, channel_block],
+            lambda kh, kw, ifc, nfc, cb: Filter[kh, kw, ifc * 4 + cb, nfc],
+            name="filter_pack",
+            tag="filter_pack",
+        )
+    else:
+        channel_chunk += 1
+
+        def _reorder_data(*indices):
+            condition = []
+            condition.append(indices[3] == channel_chunk - 1)
+            condition.append(indices[4] >= channel_tail)
+            condition = tvm.tir.all(*condition)
+            return tvm.tir.if_then_else(
+                    condition,
+                    pad_value,
+                    Input[indices[0], indices[1], indices[2], indices[3] * channel_block + indices[4]])
+        Input = te.compute(
+            [batch, in_height, in_width, channel_chunk, channel_block],
+            _reorder_data,
+            name="input_pack",
+            tag="input_pack_expanded",
+        )
+
+        def _reorder_weights(*indices):
+            condition = []
+            condition.append(indices[3] == channel_chunk - 1)
+            condition.append(indices[4] >= channel_tail)
+            condition = tvm.tir.all(*condition)
+            return tvm.tir.if_then_else(
+                    condition,
+                    pad_value,
+                    Filter[indices[0], indices[1], indices[2] * channel_block + indices[4], indices[3]])
+        Filter = te.compute(
+            [kernel_h, kernel_w, channel_chunk, num_filter_chunk, channel_block],
+            _reorder_weights,
+            name="filter_pack",
+            tag="filter_pack_expanded",
+        )
 
     # can output shape be divded by 2 or even 4?
     # if it cannot be divided, need to extend for further help with split
@@ -155,6 +194,14 @@ def compute_depthwise_conv2d_NHWC_HWOI(Input, Filter, stride, padding, dilation,
     dummy_cast = te.compute((batch, out_height_orig, out_width_orig, channel_chunk, channel_block), lambda n,y,x,fc,fb: conv[n,y,x,fc,fb].astype(out_dtype), tag="dummy_cast")
     return te.compute((batch, out_height_orig, out_width_orig, channels), lambda n,y,x,c: dummy_cast[n,y,x,c//4,c%4], tag="cast_from_acc" + args["accumulator"][-2:])
 
+def getDiv(value, start):
+    div = 1
+    for d in range(start,0,-1):
+        if (value % d) == 0:
+            div = d
+            break
+    return div
+
 def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
     """schedule optimized for batch size = 1"""
     dummy = output.op.input_tensors[0]
@@ -173,29 +220,32 @@ def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
     ##### space definition end #####
 
     pad_data, kernel = s[conv].op.input_tensors
-    s[pad_data].compute_inline()
-    s[kernel].compute_inline()
-
     pack_data = pad_data.op.input_tensors[0]
-    s[pack_data].compute_inline()
+    if s[pack_data].op.tag != "input_pack_expanded":
+        s[pack_data].compute_inline()
+    else:
+        axes = s[pack_data].op.axis
+        fused = s[pack_data].fuse(*axes[:-1])
+        shape = get_const_tuple(pack_data.shape)
+        ftc = numpy.prod(shape[:-1])
+        div = getDiv(ftc, 64)
+        block, thread = s[pack_data].split(fused, factor=div)
+        s[pack_data].bind(block, te.thread_axis("blockIdx.x"))
+        s[pack_data].bind(thread, te.thread_axis("threadIdx.x"))
 
-    ## conv only
-    #if conv.op in s.outputs:
-    #    output = conv
-    #    OL = s.cache_write(conv, "local")
-    ## conv -> output (e.g. when casting conv output)
-    #elif output.op in s.outputs:
-    #    output = s.outputs[0].output(0)
-    #    s[conv].set_scope("local")
-    #    OL = conv
-    ## conv -> injective -> ... -> injective -> output
-    #else:
-    #    # Explicitly mark the output cast to be computed inline
-    #    # the other injective ops are inlined via traverse_inline.
-    #    s[output].compute_inline()
-    #    output = s.outputs[0].output(0)
-    #    s[conv].set_scope("local")
-    #    OL = conv
+    s[pad_data].compute_inline()
+    if s[kernel].op.tag != "filter_pack_expanded":
+        s[kernel].compute_inline()
+    else:
+        axes = s[kernel].op.axis
+        fused = s[kernel].fuse(*axes[:-1])
+        shape = get_const_tuple(kernel.shape)
+        ftc = numpy.prod(shape[:-1])
+        div = getDiv(ftc, 64)
+        block, thread = s[kernel].split(fused, factor=div)
+        s[kernel].bind(block, te.thread_axis("blockIdx.x"))
+        s[kernel].bind(thread, te.thread_axis("threadIdx.x"))
+
     latest = s.outputs[0].output(0)
 
     # create cache stage
@@ -260,17 +310,31 @@ def schedule_depthwise_conv2d_NHWC_HWOI(cfg, s, output, args={}):
     s[dummy].pragma(kernel_scope, "unroll_explicit", cfg["unroll_explicit"].val)
 
     s[latest].compute_root()
-    axes = s[latest].op.axis
-    fused = s[latest].fuse(*axes[:-1])
     N, OH, OW, OC = get_const_tuple(latest.shape)
 
-    if OC < 32:
-        block, thread = s[latest].split(fused, factor=32)
-        s[latest].bind(block, te.thread_axis("blockIdx.x"))
-        s[latest].bind(thread, te.thread_axis("threadIdx.x"))
+    if OC % 4 == 0:
+        n, oh, ow, oc = s[latest].op.axis
+        occ, ocb = s[latest].split(oc, factor=4)
+        s[latest].reorder(n, oh, ow, occ, ocb)
+        s[latest].vectorize(ocb)
+        fused = s[latest].fuse(n, oh, ow, occ)
+
+        ftc = N * OH * OW * OC / 4
+        div = getDiv(ftc, 128)
+        block, thread = s[latest].split(fused, factor=div)
+
+        s[latest].bind(block, te.thread_axis("blockIdx.z"))
+        s[latest].bind(thread, te.thread_axis("threadIdx.z"))
     else:
-        s[latest].bind(fused, te.thread_axis("blockIdx.x"))
-        s[latest].bind(*axes[-1:], te.thread_axis("threadIdx.x"))
+        axes = s[latest].op.axis
+        fused = s[latest].fuse(*axes[:-1])
+        if OC < 32:
+            block, thread = s[latest].split(fused, factor=32)
+            s[latest].bind(block, te.thread_axis("blockIdx.x"))
+            s[latest].bind(thread, te.thread_axis("threadIdx.x"))
+        else:
+            s[latest].bind(fused, te.thread_axis("blockIdx.x"))
+            s[latest].bind(*axes[-1:], te.thread_axis("threadIdx.x"))
 
     if output != latest:
         s[output].compute_inline()
