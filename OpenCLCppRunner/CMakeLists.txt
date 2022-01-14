@@ -3,13 +3,23 @@ project("opencl_cpp_runner")
 
 set(CMAKE_CXX_STANDARD 14)
 
-find_package(OpenCL REQUIRED)
-
+find_package(OpenCL)
+if (${OpenCL_INCLUDE_DIR})
 include_directories(
         common/
         implementations/
         ${OpenCL_INCLUDE_DIR}
 )
+else()
+set(USE_OPENCL /home/amalyshe/sandboxes/tools/AdrenoOpenCLSDK/opencl-sdk-1.3)
+include(FindOpenCL.cmake)
+find_opencl(${USE_OPENCL})
+include_directories(
+        common/
+        implementations/
+        ${OpenCL_INCLUDE_DIRS}
+)
+endif()
 
 file(GLOB src_files
         main.cpp
