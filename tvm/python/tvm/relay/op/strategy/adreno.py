@@ -136,6 +136,29 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
             raise RuntimeError("General group convolution is not currently supported")
     return strategy
 
+@dense_strategy.register(["adreno"])
+def dense_strategy_adreno(attrs, inputs, out_type, target):
+    from tvm.te import SpecializedCondition
+    """dense adreno strategy"""
+    strategy = _op.OpStrategy()
+    data, weights = inputs
+    b, i = get_const_tuple(data.shape)
+    o, _ = get_const_tuple(weights.shape)
+    strategy.add_implementation(
+        wrap_compute_dense(topi.adreno.dense_small_batch),
+        wrap_topi_schedule(topi.adreno.schedule_dense_small_batch),
+        name="dense_small_batch.adreno",
+    )
+
+    #with SpecializedCondition(b >= 32):
+    #    strategy.add_implementation(
+    #        wrap_compute_dense(topi.cuda.dense_large_batch),
+    #        wrap_topi_schedule(topi.cuda.schedule_dense_large_batch),
+    #        name="dense_large_batch.cuda",
+    #        plevel=5,
+    #    )
+    return strategy
+
 @schedule_pool.register("adreno")
 def schedule_pool_adreno(attrs, outs, target):
     """schedule pooling ops for adreno"""

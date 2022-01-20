@@ -244,7 +244,7 @@ def schedule_conv2d_NHWC(cfg, s, output, args={}):
     ryo, ryi = cfg["tile_ry"].apply(s, conv, ry)
     rxo, rxi = cfg["tile_rx"].apply(s, conv, rx)
 
-    s[conv].reorder(rco, ryo, rxo, rci, ryi, rxi, rcb, n, fc, y, x, fb)
+    s[conv].reorder(rco, ryo, rxo, rci, ryi, rxi, rcb, n, y, x, fc, fb)
     s[conv].vectorize(fb)
     s[conv].unroll(rcb)
 
