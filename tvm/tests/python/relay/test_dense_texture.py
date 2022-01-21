@@ -169,8 +169,8 @@ def test_dense_1x4096_1000x4096():
     target="opencl --device=adreno"
     dtype="float16"
 
-    input_shape = (1, 4096)
-    weights_shape = (1000, 4096)
+    input_shape = (1, 4)
+    weights_shape = (8, 4)
     bias_shape = (weights_shape[0],)
     units = weights_shape[0]
     A = relay.var("data", shape=input_shape, dtype=dtype)
