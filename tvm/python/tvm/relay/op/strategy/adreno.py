@@ -144,19 +144,20 @@ def dense_strategy_adreno(attrs, inputs, out_type, target):
     data, weights = inputs
     b, i = get_const_tuple(data.shape)
     o, _ = get_const_tuple(weights.shape)
+    if out_type.dtype == "float16":
+        strategy.add_implementation(
+            wrap_compute_dense(topi.adreno.dense),
+            wrap_topi_schedule(topi.adreno.schedule_dense),
+            name="dense.adreno",
+            plevel=10
+        )
     strategy.add_implementation(
-        wrap_compute_dense(topi.adreno.dense_small_batch),
-        wrap_topi_schedule(topi.adreno.schedule_dense_small_batch),
-        name="dense_small_batch.adreno",
+        wrap_compute_dense(topi.adreno.dense_acc32),
+        wrap_topi_schedule(topi.adreno.schedule_dense_acc32),
+        name="dense_acc32.adreno",
+        plevel=20
     )
 
-    #with SpecializedCondition(b >= 32):
-    #    strategy.add_implementation(
-    #        wrap_compute_dense(topi.cuda.dense_large_batch),
-    #        wrap_topi_schedule(topi.cuda.schedule_dense_large_batch),
-    #        name="dense_large_batch.cuda",
-    #        plevel=5,
-    #    )
     return strategy
 
 @schedule_pool.register("adreno")

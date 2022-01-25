@@ -102,7 +102,7 @@ def build_run_compare(
         #     if abs(output[index] - x) > 0.01:
         #         print(index, output[index], x)
 
-        np.testing.assert_allclose(output, ref_output, rtol=1e-2, atol=1e-2)
+        np.testing.assert_allclose(output, ref_output, rtol=1e-1, atol=1e-1)
 
 
 def test_dense_1x25088_4096x25088():
@@ -169,24 +169,54 @@ def test_dense_1x4096_1000x4096():
     target="opencl --device=adreno"
     dtype="float16"
 
-    input_shape = (1, 4)
-    weights_shape = (8, 4)
+    input_shape = (1, 4096)
+    weights_shape = (1000, 4096)
     bias_shape = (weights_shape[0],)
     units = weights_shape[0]
     A = relay.var("data", shape=input_shape, dtype=dtype)
     B = relay.var("weight", shape=weights_shape, dtype=dtype)
     C = relay.var("bias", shape=bias_shape, dtype=dtype)
     D = relay.nn.dense(A, B, units)
-    #D = relay.add(D, C)
-    #D = relay.nn.relu(D)
+    D = relay.add(D, C)
+    D = relay.nn.relu(D)
     mod = relay.Function([A, B, C], D)
 
     np.random.seed(1)
-    #initializer = relay.testing.init.Xavier()
+    initializer = relay.testing.init.Xavier()
     filter_data = np.ones(weights_shape).astype(dtype)
     bias_data = np.ones(bias_shape).astype(dtype)
-    #initializer("weight", filter_data)
-    #initializer("bias", bias_data)
+    initializer("weight", filter_data)
+    initializer("bias", bias_data)
+    params1 = {
+        "weight": tvm.nd.array(filter_data),
+        "bias": tvm.nd.array(bias_data),
+    }
+
+    build_run_compare(mod, params1, {"data": input_shape}, dtype, target)
+
+
+def test_dense_1x4096_25088x4096():
+    target="opencl --device=adreno"
+    dtype="float16"
+
+    input_shape = (1, 4096)
+    weights_shape = (25088, 4096)
+    bias_shape = (weights_shape[0],)
+    units = weights_shape[0]
+    A = relay.var("data", shape=input_shape, dtype=dtype)
+    B = relay.var("weight", shape=weights_shape, dtype=dtype)
+    C = relay.var("bias", shape=bias_shape, dtype=dtype)
+    D = relay.nn.dense(A, B, units)
+    D = relay.add(D, C)
+    D = relay.nn.relu(D)
+    mod = relay.Function([A, B, C], D)
+
+    np.random.seed(1)
+    initializer = relay.testing.init.Xavier()
+    filter_data = np.ones(weights_shape).astype(dtype)
+    bias_data = np.ones(bias_shape).astype(dtype)
+    initializer("weight", filter_data)
+    initializer("bias", bias_data)
     params1 = {
         "weight": tvm.nd.array(filter_data),
         "bias": tvm.nd.array(bias_data),
