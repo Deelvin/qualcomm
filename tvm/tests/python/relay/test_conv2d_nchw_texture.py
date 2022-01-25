@@ -23,10 +23,9 @@ from tvm.relay import testing
 from tvm.relay.transform import recast
 from tvm.relay.transform import recast
 from tvm.contrib import graph_runtime
-from tvm import autotvm
 
 def get_reference(mod, params1, input_shape, inputs):
-    mod_fp32 = recast(mod, "float32", "float32", ops = ["nn.conv2d", "add", "multiply", "nn.relu"])
+    mod_fp32 = recast(mod, "float32", "float32", ops = ["nn.conv2d", "add", "nn.relu"])
     with relay.build_config(opt_level=3):
         graph, lib, params = relay.build(
             mod_fp32, "llvm", params=params1
@@ -50,7 +49,7 @@ def build_run_compare(
     input_shape,
     dtype="float32",
     target="llvm",
-    json=None):
+    gpu_preprocess = None):
 
     rpc_tracker_host = os.environ["TVM_TRACKER_HOST"]
     rpc_tracker_port = os.environ["TVM_TRACKER_PORT"]
@@ -62,19 +61,15 @@ def build_run_compare(
         run_on_host = 1
         target_host="llvm"
 
-    #
-    if json:
-        with autotvm.apply_history_best(json):
-            with relay.build_config(opt_level=3):
-                graph, lib, params = relay.build(
-                    tvm_mod, target_host=target_host, target=target, params=params1
-                )
+    if gpu_preprocess:
+        tvm_mod_nchwc = gpu_preprocess(tvm_mod)
     else:
-            with relay.build_config(opt_level=3):
-                graph, lib, params = relay.build(
-                    tvm_mod, target_host=target_host, target=target, params=params1
-                )
+        tvm_mod_nchwc = tvm_mod
 
+    with relay.build_config(opt_level=3):
+        graph, lib, params = relay.build(
+            tvm_mod_nchwc, target_host=target_host, target=target, params=params1
+        )
     if run_on_host:
         ctx = tvm.opencl()
         m = graph_runtime.create(graph, lib, ctx)
@@ -113,8 +108,113 @@ def build_run_compare(
         #     if abs(output[index] - x) > 0.01:
         #         print(index, output[index], x)
 
-        np.testing.assert_allclose(output, ref_output, rtol=1e-2, atol=1e-2)
+        np.testing.assert_allclose(output, ref_output, rtol=1e-1, atol=1e-1)
 
+def gpu_preprocess(tvm_mod):
+    layout_config = relay.transform.LayoutConfig()
+    desired_layouts = {"nn.conv2d": ["NCHW4c", "OIHW4o"]}
+    with layout_config:
+        seq = tvm.transform.Sequential([relay.transform.ConvertLayout(desired_layouts)])
+        with tvm.transform.PassContext(opt_level=3):
+            mod = tvm.IRModule.from_expr(tvm_mod)
+            tvm_mod_nchwc = seq(mod)
+            return tvm_mod_nchwc
+
+def test_conv2d_inceptionv3_64x35x35_96x64x3x3_nopad():
+    target="opencl --device=adreno"
+    dtype="float16"
+
+    input_shape = (1, 32, 42, 42)
+    filter_shape = (96, 32, 3, 3)
+    bias_shape = (1, 96, 1, 1)
+    A = relay.var("data", shape=input_shape, dtype=dtype)
+    B = relay.var("weight", shape=filter_shape, dtype=dtype)
+    bias = relay.var("bias", shape=bias_shape, dtype=dtype)
+
+    #C = relay.nn.relu(A)
+    conv = relay.nn.conv2d(A, B, data_layout="NCHW", kernel_layout="OIHW",
+                        padding=[0,0,0,0],strides=[2,2],
+                        out_dtype=dtype, channels=96, kernel_size=(3,3))
+    D = relay.op.add(conv, bias)
+    D = relay.op.nn.relu(D)
+
+    mod = relay.Function([A, B, bias], D)
+    np.random.seed(0)
+    initializer = relay.testing.init.Xavier()
+    filter_data = np.zeros(filter_shape).astype(dtype)
+    bias_data = np.zeros(bias_shape).astype(dtype)
+    initializer("weight", filter_data)
+    initializer("bias", bias_data)
+    params1 = {
+        "weight": tvm.nd.array(filter_data),
+        "bias" : tvm.nd.array(bias_data),
+    }
+
+    build_run_compare (mod, params1, {"data": input_shape}, dtype, target, gpu_preprocess)
+
+def test_conv2d_inceptionv3_64x35x35_96x64x3x3_nopad_pass():
+    target="opencl --device=adreno"
+    dtype="float16"
+
+    input_shape = (1, 32, 40, 40)
+    filter_shape = (96, 32, 2, 2)
+    bias_shape = (1, 96, 1, 1)
+    A = relay.var("data", shape=input_shape, dtype=dtype)
+    B = relay.var("weight", shape=filter_shape, dtype=dtype)
+    bias = relay.var("bias", shape=bias_shape, dtype=dtype)
+
+    #C = relay.nn.relu(A)
+    conv = relay.nn.conv2d(A, B, data_layout="NCHW", kernel_layout="OIHW",
+                        padding=[0,0,0,0],strides=[2,2],
+                        out_dtype=dtype, channels=96, kernel_size=(2,2))
+    D = relay.op.add(conv, bias)
+    D = relay.op.nn.relu(D)
+
+    mod = relay.Function([A, B, bias], D)
+    np.random.seed(0)
+    initializer = relay.testing.init.Xavier()
+    filter_data = np.zeros(filter_shape).astype(dtype)
+    bias_data = np.zeros(bias_shape).astype(dtype)
+    initializer("weight", filter_data)
+    initializer("bias", bias_data)
+    params1 = {
+        "weight": tvm.nd.array(filter_data),
+        "bias" : tvm.nd.array(bias_data),
+    }
+
+    build_run_compare (mod, params1, {"data": input_shape}, dtype, target, gpu_preprocess)
+
+def test_conv2d_inceptionv3_35_35_strides():
+    target="opencl --device=adreno"
+    dtype="float16"
+
+    input_shape = (1, 48, 35, 35)
+    filter_shape = (64, 48, 5, 5)
+    bias_shape = (1, 64, 1, 1)
+    A = relay.var("data", shape=input_shape, dtype=dtype)
+    B = relay.var("weight", shape=filter_shape, dtype=dtype)
+    bias = relay.var("bias", shape=bias_shape, dtype=dtype)
+
+    #C = relay.nn.relu(A)
+    conv = relay.nn.conv2d(A, B, data_layout="NCHW", kernel_layout="OIHW",
+                        padding=[2,2,2,2],strides=[1,1],
+                        out_dtype=dtype, channels=64, kernel_size=(5,5))
+    D = relay.op.add(conv, bias)
+    D = relay.op.nn.relu(D)
+
+    mod = relay.Function([A, B, bias], D)
+    np.random.seed(0)
+    initializer = relay.testing.init.Xavier()
+    filter_data = np.zeros(filter_shape).astype(dtype)
+    bias_data = np.zeros(bias_shape).astype(dtype)
+    initializer("weight", filter_data)
+    initializer("bias", bias_data)
+    params1 = {
+        "weight": tvm.nd.array(filter_data),
+        "bias" : tvm.nd.array(bias_data),
+    }
+
+    build_run_compare (mod, params1, {"data": input_shape}, dtype, target, gpu_preprocess)
 
 def test_conv2d_resnet50_v2_nchw_3c():
     target="opencl --device=adreno"
@@ -167,7 +267,7 @@ def test_conv2d_inceptionv3_nchw_3c():
     D = relay.op.add(conv, bias)
     D = relay.op.nn.relu(D)
 
-    mod = relay.Function([A, B, bias], D)  
+    mod = relay.Function([A, B, bias], D)
     np.random.seed(0)
     initializer = relay.testing.init.Xavier()
     filter_data = np.zeros(filter_shape).astype(dtype)
@@ -199,7 +299,7 @@ def test_conv2d_1x1_16c16spatial():
     D = relay.op.add(conv, bias)
     D = relay.op.nn.relu(D)
 
-    mod = relay.Function([A, B, bias], D)  
+    mod = relay.Function([A, B, bias], D)
     np.random.seed(0)
     initializer = relay.testing.init.Xavier()
     filter_data = np.zeros(filter_shape).astype(dtype)
@@ -231,7 +331,7 @@ def test_conv2d_4x4_16c16pad():
     D = relay.op.add(conv, bias)
     D = relay.op.nn.relu(D)
 
-    mod = relay.Function([A, B, bias], D)  
+    mod = relay.Function([A, B, bias], D)
     np.random.seed(0)
     initializer = relay.testing.init.Xavier()
     filter_data = np.zeros(filter_shape).astype(dtype)
@@ -272,8 +372,11 @@ def test_conv2d_yolov3_v2_nchw_3c():
     build_run_compare (mod, params, {"data": input_shape}, dtype, target)
 
 if __name__ == "__main__":
-  test_conv2d_resnet50_v2_nchw_3c()
-  test_conv2d_inceptionv3_nchw_3c()
-  test_conv2d_yolov3_v2_nchw_3c()
-  test_conv2d_1x1_16c16spatial()
-  test_conv2d_4x4_16c16pad()
+    test_conv2d_inceptionv3_64x35x35_96x64x3x3_nopad_pass()
+    test_conv2d_inceptionv3_64x35x35_96x64x3x3_nopad()
+    test_conv2d_inceptionv3_35_35_strides()
+    test_conv2d_resnet50_v2_nchw_3c()
+    test_conv2d_inceptionv3_nchw_3c()
+    test_conv2d_yolov3_v2_nchw_3c()
+    test_conv2d_1x1_16c16spatial()
+    test_conv2d_4x4_16c16pad()
