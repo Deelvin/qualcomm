@@ -141,6 +141,38 @@ class StorageInfo : private ExprVisitor{
       Visit(arg);
     }
   }
+  std::string ScopeSuffix(Array<PrimExpr> shape) {
+    std::map<int, std::string> diffs;
+    int limit = 16384;
+    int a0 = shape[0].as<IntImmNode>()->value;
+    int a1 = shape[1].as<IntImmNode>()->value;
+    int a2 = shape[2].as<IntImmNode>()->value;
+    int a3 = shape[3].as<IntImmNode>()->value;
+
+    int d3l = a0 * a1 * a2;
+    int d3r = a3;
+    int diff3 = d3l > d3r ? d3l - d3r : d3r - d3l;
+    if(d3l < limit && d3r < limit)
+      diffs[diff3] = "";
+
+    int d2l = a0 * a1;
+    int d2r = a2 * a3;
+    int diff2 = d2l > d2r ? d2l - d2r : d2r - d2l;
+    if (d2l < limit && d2r < limit)
+      diffs[diff2] = "nhwc";
+
+    int d1l = a0;
+    int d1r = a1 * a2 * a3;
+    int diff1 = d1l > d1r ? d1l - d1r : d1r - d1l;
+    if (d1l < limit && d1r < limit)
+      diffs[diff1] = "weight";
+    if (!diffs.empty()){
+      return diffs.begin()->second;
+    }
+    else {
+      return "fail";
+    }
+  }
 
   void ApplyConsumerScopeToInputs(const ExprNode* expr, std::string scope_suffix = "") {
     auto consumer_scopes_it = consumer_storage_scopes_.find(expr);
@@ -152,9 +184,12 @@ class StorageInfo : private ExprVisitor{
       bool expr_is_rgba_vectorizable = false;
       if (const auto* ttype = expr->checked_type().as<TensorTypeNode>()) {
         if (ttype->shape.size() == 5) {
-          auto inner_dim = ttype->shape.back().as<IntImmNode>();
-          if (inner_dim && inner_dim->value == 4) {
-            expr_is_rgba_vectorizable = true;
+          scope_suffix = ScopeSuffix(ttype->shape);
+          if (scope_suffix != "fail") {
+            auto inner_dim = ttype->shape.back().as<IntImmNode>();
+            if (inner_dim && inner_dim->value == 4) {
+              expr_is_rgba_vectorizable = true;
+            }
           }
         }
       }
@@ -261,7 +296,8 @@ class StorageInfo : private ExprVisitor{
     if (auto attrs = call->attrs.as<Conv2DAttrs>()) {
       if (attrs->data_layout == "NCHW4c" && attrs->kernel_layout == "OIHW4o") {
         supports_texture_storage = true;
-      } else if (attrs->data_layout == "NHWC" && attrs->kernel_layout == "HWIO") {
+      } else if (attrs->data_layout == "NHWC4c" &&
+        (attrs->kernel_layout == "HWIO4o" || attrs->kernel_layout == "HWOI4o" || attrs->kernel_layout == "OIHW4o")) {
         supports_texture_storage = true;
       }
     } else if (auto attrs = call->attrs.as<GlobalPool2DAttrs>()) {
