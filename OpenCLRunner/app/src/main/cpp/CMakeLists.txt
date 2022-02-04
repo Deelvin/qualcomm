@@ -31,6 +31,9 @@ file(GLOB src_files
         implementations/mace_inceptionv3_kernel.cpp
         implementations/tvm_resnet50v2_conv_kernel.cpp
         implementations/simple_mad.cpp
+        implementations/dense_textures.cpp
+        implementations/cuda_dense.cpp
+        implementations/cuda_dense_textures.cpp
 )
 
 add_library( # Sets the name of the library.
