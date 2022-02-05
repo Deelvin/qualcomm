@@ -117,7 +117,50 @@ class ModelImporter(object):
 
         return onnx_model_file
 
-    def import_mace_mobilenetv1(self, target="llvm", dtype="float32"):
+
+    def get_graphdef_from_tf1(self, model_url, filename):
+        graph_def = None
+        tf_model_file = os.path.abspath(
+            os.path.dirname(os.path.realpath(__file__))
+            + "/../models/{}.pb".format(filename)
+        )
+
+        from tvm.contrib import download
+        download.download(model_url, tf_model_file)
+        # converted using command line:
+        # python -m tf2onnx.convert --graphdef mace_resnet-v2-50.pb --output mace_resnet-v2-50.onnx --inputs input:0[1,224,224,3] --outputs resnet_v2_50/predictions/Reshape_1:0
+        onnx_model_file = os.path.abspath(
+            os.path.dirname(os.path.realpath(__file__))
+            + "/../models/{}.onnx".format(filename))
+        import tensorflow as tf
+        try:
+            tf_compat_v1 = tf.compat.v1
+        except ImportError:
+            tf_compat_v1 = tf
+        # Tensorflow utility functions
+        import tvm.relay.testing.tf as tf_testing
+
+        with tf_compat_v1.gfile.GFile(tf_model_file, "rb") as f:
+            graph_def = tf_compat_v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+            graph_def = tf_testing.ProcessGraphDefParam(graph_def)
+        return graph_def
+
+    def import_mace_mobilenetv1_nhwc(self, target="llvm", dtype="float32"):
+        model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/mobilenet-v1/mobilenet-v1-1.0.pb"
+        filename = "mace_mobilenet-v1-1.0"
+        graph_def = self.get_graphdef_from_tf1(model_url, filename)
+        shape_dict = {"input": (1, 224, 224, 3)}
+        mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
+                                        outputs=["MobilenetV1/Predictions/Reshape_1"])
+
+        # downcast to float16
+        if dtype == "float16":
+            mod = downcast_fp16(mod["main"], mod)
+        mod = relay.quantize.prerequisite_optimize(mod, params)
+        return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
+
+    def import_mace_mobilenetv1_nchw(self, target="llvm", dtype="float32"):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/mobilenet-v1/mobilenet-v1-1.0.pb"
         filename = "mace_mobilenet-v1-1.0"
         input_names = ["input:0"]
