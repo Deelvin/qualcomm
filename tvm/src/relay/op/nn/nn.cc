@@ -1186,6 +1186,7 @@ bool SpaceToDepthRel(const Array<Type>& types, int num_inputs, const Attrs& attr
 // used by frontend FFI
 Expr MakeSpaceToDepth(Expr data, int block_size, String layout) {
   auto attrs = make_object<SubPixelAttrs>();
+  attrs->layout = "NHWC";
   attrs->block_size = block_size;
   attrs->layout = std::move(layout);
   static const Op& op = Op::Get("nn.space_to_depth");
@@ -1209,6 +1210,24 @@ RELAY_REGISTER_OP("nn.space_to_depth")
     .add_argument("data", "Tensor", "The input tensor")
     .set_support_level(5)
     .add_type_rel("SpaceToDepth", SpaceToDepthRel);
+
+template<typename T>
+Array<Array<Layout> > SpaceInferCorrectLayout(const Attrs &attrs,
+                                             const Array<Layout> &new_in_layouts,
+                                             const Array<Layout> &old_in_layouts,
+                                             const Array<tvm::relay::Type> &old_in_types) {
+  // NOTE: Discard "const" qualifier here.
+  T *params = const_cast<T *>(attrs.as<T>());
+
+  if (new_in_layouts.defined()) {
+    // Set the SpaceToBatch/BatchToSpace with the new layout.
+    ICHECK_EQ(new_in_layouts.size(), 1);
+    params->layout = new_in_layouts[0].name();
+  }
+
+  Layout inferred_layout(params->layout);
+  return Array<Array<Layout> >{{ inferred_layout }, { inferred_layout }};
+}
 
 // Positional relay function to create SpaceToBatchND operator
 // used by frontend FFI
@@ -1324,6 +1343,7 @@ Example::
     .set_attrs_type<SpaceToBatchNDAttrs>()
     .set_support_level(5)
     .add_type_rel("SpaceToBatchND", SpaceToBatchNDRel)
+    // .set_attr<FInferCorrectLayout>("FInferCorrectLayout", SpaceInferCorrectLayout<SpaceToBatchNDAttrs>)
     .set_attr<FTVMCompute>("FTVMCompute", SpaceToBatchNDCompute)
     .set_attr<TOpPattern>("TOpPattern", kInjective);
 
@@ -1335,6 +1355,7 @@ TVM_REGISTER_NODE_TYPE(BatchToSpaceNDAttrs);
 
 Expr MakeBatchToSpaceND(Expr data, Array<Integer> block_shape, Array<Array<IndexExpr>> crops) {
   auto attrs = make_object<BatchToSpaceNDAttrs>();
+  attrs->layout = "NHWC";
   attrs->block_shape = std::move(block_shape);
   attrs->crops = std::move(crops);
   static const Op& op = Op::Get("nn.batch_to_space_nd");
@@ -1384,7 +1405,6 @@ bool BatchToSpaceNDRel(const Array<Type>& types, int num_inputs, const Attrs& at
   for (int i = bdims + 1; i < indims; i++) {
     out_shape[i] = in_shape[i];
   }
-
   // Assign output shape
   reporter->Assign(types[1], TensorType(Array<IndexExpr>(out_shape), input->dtype));
   return true;
@@ -1425,6 +1445,7 @@ Example::
     .set_attrs_type<BatchToSpaceNDAttrs>()
     .set_support_level(5)
     .add_type_rel("BatchToSpaceND", BatchToSpaceNDRel)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", SpaceInferCorrectLayout<BatchToSpaceNDAttrs>)
     .set_attr<FTVMCompute>("FTVMCompute", BatchToSpaceNDCompute)
     .set_attr<TOpPattern>("TOpPattern", kInjective);
 

@@ -1348,6 +1348,7 @@ struct SpaceToBatchNDAttrs : public tvm::AttrsNode<SpaceToBatchNDAttrs> {
   Array<Integer> block_shape;
   Array<Array<IndexExpr>> paddings;
   double pad_value;
+  String layout;
 
   TVM_DECLARE_ATTRS(SpaceToBatchNDAttrs, "relay.attrs.SpaceToBatchNDAttrs") {
     TVM_ATTR_FIELD(block_shape)
@@ -1355,6 +1356,11 @@ struct SpaceToBatchNDAttrs : public tvm::AttrsNode<SpaceToBatchNDAttrs> {
         .describe("1-D containing block size for each spatial dimension.");
     TVM_ATTR_FIELD(paddings).describe("2-D containing paddings for each spatial dimension.");
     TVM_ATTR_FIELD(pad_value).set_default(0.0).describe("The value used for padding.");
+    TVM_ATTR_FIELD(layout).set_default("NHWC").describe(
+        "Dimension ordering of input data. Can be 'NCHW', 'NHWC', etc."
+        "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
+        "dimensions respectively. SpaceToBatchND is applied on the 'N', 'H' and"
+        "'W' dimensions.");
   }
 };  // struct SpaceToBatchNDAttrs
 
@@ -1362,12 +1368,18 @@ struct SpaceToBatchNDAttrs : public tvm::AttrsNode<SpaceToBatchNDAttrs> {
 struct BatchToSpaceNDAttrs : public tvm::AttrsNode<BatchToSpaceNDAttrs> {
   Array<Integer> block_shape;
   Array<Array<IndexExpr>> crops;
+  String layout;
 
   TVM_DECLARE_ATTRS(BatchToSpaceNDAttrs, "relay.attrs.BatchToSpaceNDAttrs") {
     TVM_ATTR_FIELD(block_shape)
         .set_default(Array<Integer>({1, 1}))
         .describe("1-D containing block size for each spatial dimension.");
     TVM_ATTR_FIELD(crops).describe("2-D containing amount to crop from spatial dimension.");
+    TVM_ATTR_FIELD(layout).set_default("NHWC").describe(
+        "Dimension ordering of input data. Can be 'NCHW', 'NHWC', etc."
+        "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
+        "dimensions respectively. BatchToSpaceND is applied on the 'N', 'H' and"
+        "'W' dimensions.");
   }
 };  // struct BatchToSpaceNDAttrs
 

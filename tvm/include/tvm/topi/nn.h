@@ -639,6 +639,7 @@ inline tvm::te::Tensor batch_to_space_nd(const tvm::te::Tensor& data,
     }
   }
 
+  std::cout << "begin_idx " << PrettyPrint(begin_idx) << "end_idx" << PrettyPrint(end_idx) << std::endl;
   out = strided_slice(out, begin_idx, end_idx, strides);
   return out;
 }
