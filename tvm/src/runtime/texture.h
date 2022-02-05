@@ -58,7 +58,11 @@ inline size_t DefaultTextureLayoutSeparator(size_t shape_rank, std::string conve
   } else if (convention == "texture:weight") {
     separator = 1;
   } else if (convention == "texture:nhwc") {
-    separator = 2;
+    if (shape_rank == 3) {
+      separator = 1;
+    } else {
+      separator = 2;
+    }
   } else {
     LOG(FATAL) << "Encountered unknown texture lowering convention";
   }

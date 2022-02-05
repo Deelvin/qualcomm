@@ -31,6 +31,9 @@ logger = logging.getLogger("topi")
 
 _NCHWc_matcher = re.compile("^NCHW[0-9]+c$")
 _OIHWo_matcher = re.compile("^OIHW[0-9]+o$")
+_NHWCc_matcher = re.compile("^NHWC[0-9]+c$")
+_HWIOo_matcher = re.compile("^HWIO[0-9]+o$")
+_HWOIo_matcher = re.compile("^HWOI[0-9]+o$")
 
 
 @conv2d_alter_layout.register("adreno")
@@ -115,39 +118,50 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
             assert _OIHWo_matcher.match(kernel_layout)
         return relay.nn.conv2d(*inputs, **new_attrs)
 
-    if topi_tmpl == "depthwise_conv2d_NCHWc.x86":
-        if data_layout == "NCHW" and kernel_layout == "OIHW":
-            if cfg.is_fallback:
-                _get_default_config(
-                    cfg,
-                    data_tensor,
-                    kernel_tensor,
-                    strides,
-                    padding,
-                    dilation,
-                    out_dtype,
-                    True,
-                    data_layout,
-                )
 
-            batch_size, in_channel, height, width = get_const_tuple(data_tensor.shape)
-            out_channel, channel_multiplier, kh, kw = get_const_tuple(kernel_tensor.shape)
-            ic_bn, oc_bn = cfg["tile_ic"].size[-1], cfg["tile_oc"].size[-1]
-            assert channel_multiplier == 1
+    if "conv2d_nhwc" in topi_tmpl: # covers both conv2d_nchwc and depthwise_conv2d_nchwc
+        # we only convert conv2d_NCHW to conv2d_NCHWc for x86
+        if ((data_layout == "NHWC" and kernel_layout == "HWIO") or
+           (data_layout == "NHWC" and kernel_layout == "HWOI")):
+            if kernel_layout == "HWIO":
+                batch_size, in_height, in_width, in_channels = data_tensor.shape
+                kernel_h, kernel_w, in_filter_channel, out_channles = kernel_tensor.shape
+            else:
+                batch_size, in_height, in_width, in_channels = data_tensor.shape
+                kernel_h, kernel_w, out_channles, in_filter_channel = kernel_tensor.shape
+            in_channel_block = in_channels % 4
+            if in_channel_block == 0:
+                in_channel_block = 4
+            num_filter_block = out_channles % 4
+            if num_filter_block == 0:
+                num_filter_block = 4
+            if in_channel_block != 4 or num_filter_block != 4:
+              return None
 
             # update new attrs
-            new_attrs["channels"] = out_channel
-            new_attrs["data_layout"] = "NCHW%dc" % ic_bn
-            new_attrs["kernel_layout"] = "OIHW1i%do" % oc_bn
-            new_attrs["out_layout"] = "NCHW%dc" % oc_bn
+            new_attrs["channels"] = out_channles
+            new_attrs["data_layout"] = "NHWC%dc" % in_channel_block
+            # (oc, ic, h, w) -> (OC, IC, h, w, ic, oc)
+            if kernel_layout == "HWIO":
+                new_attrs["kernel_layout"] = "HWIO%do" % num_filter_block
+            else:
+                new_attrs["kernel_layout"] = "HWOI%do" % num_filter_block
+            new_attrs["out_layout"] = "NHWC%dc" % num_filter_block
 
-            # Store altered operator's config.
+            # Store altered operator's config
             new_data = te.placeholder(
-                (batch_size, in_channel // ic_bn, height, width, ic_bn), dtype=data_dtype
+                (batch_size, in_height, in_width, in_channels // in_channel_block, in_channel_block), dtype=data_dtype
             )
-            new_kernel = te.placeholder(
-                (out_channel // oc_bn, 1, kh, kw, 1, oc_bn), dtype=kernel_dtype
-            )
+            if kernel_layout == "HWIO":
+                new_kernel = te.placeholder(
+                    (kernel_h, kernel_w, in_filter_channel, out_channles // num_filter_block, num_filter_block),
+                    dtype=kernel_tensor.dtype,
+                )
+            else:
+                new_kernel = te.placeholder(
+                    (kernel_h, kernel_w, out_channles // num_filter_block, in_filter_channel, num_filter_block),
+                    dtype=kernel_tensor.dtype,
+                )
             new_workload = autotvm.task.args_to_workload(
                 [
                     new_data,
@@ -155,17 +169,15 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
                     strides,
                     padding,
                     dilation,
-                    new_attrs["data_layout"],
-                    new_attrs["out_layout"],
                     out_dtype,
                 ],
                 topi_tmpl,
             )
             dispatch_ctx.update(target, new_workload, cfg)
         else:
-            assert _NCHWc_matcher.match(data_layout)
-            assert _OIHWo_matcher.match(kernel_layout)
-        return relay.nn.contrib_depthwise_conv2d_nchwc(*inputs, **new_attrs)
+            assert _NHWCc_matcher.match(data_layout)
+            assert (_HWIOo_matcher.match(kernel_layout) or _HWOIo_matcher.match(kernel_layout))
+        return relay.nn.conv2d(*inputs, **new_attrs)
 
     return None
 

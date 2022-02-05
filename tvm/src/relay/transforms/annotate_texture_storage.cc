@@ -97,7 +97,7 @@ class StorageInfo : private ExprVisitor{
   }
 
   void VisitExpr_(const ConstantNode* cn) final {
-    ApplyConsumerScopeToInputs(cn, "weight");
+    ApplyConsumerScopeToInputs(cn);
   }
 
   void VisitExpr_(const CallNode* call) final {
@@ -109,7 +109,13 @@ class StorageInfo : private ExprVisitor{
           Visit(call->op);
           if (primitive_supports_texture_) {
             if (call->checked_type().as<TensorTypeNode>()) {
-              storage_scope_[call].push_back("texture");
+              std::string scope = "texture";
+              if (const auto* ttype = call->checked_type().as<TensorTypeNode>()) {
+                if (ttype->shape.size() == 5) {
+                  scope = ScopeSuffix(ttype->shape);
+                }
+              }
+              storage_scope_[call].push_back(scope);
             } else {
               const auto* tuple_type = call->type_as<TupleTypeNode>();
               ICHECK(tuple_type);
@@ -141,8 +147,45 @@ class StorageInfo : private ExprVisitor{
       Visit(arg);
     }
   }
+  std::string ScopeSuffix(Array<PrimExpr> shape) {
+    std::map<int, std::string> diffs;
+    int limit = 16384;
+    int a0 = shape[0].as<IntImmNode>()->value;
+    int a1 = shape[1].as<IntImmNode>()->value;
+    int a2 = shape[2].as<IntImmNode>()->value;
+    int a3 = shape[3].as<IntImmNode>()->value;
 
-  void ApplyConsumerScopeToInputs(const ExprNode* expr, std::string scope_suffix = "") {
+    int d3l = a0 * a1 * a2;
+    int d3r = a3;
+    int diff3 = d3l > d3r ? d3l - d3r : d3r - d3l;
+    if(d3l < limit && d3r < limit)
+      diffs[diff3] = "";
+
+    int d2l = a0 * a1;
+    int d2r = a2 * a3;
+    int diff2 = d2l > d2r ? d2l - d2r : d2r - d2l;
+    if (d2l < limit && d2r < limit)
+      diffs[diff2] = "nhwc";
+
+    int d1l = a0;
+    int d1r = a1 * a2 * a3;
+    int diff1 = d1l > d1r ? d1l - d1r : d1r - d1l;
+    if (d1l < limit && d1r < limit)
+      diffs[diff1] = "weight";
+    if (!diffs.empty()){
+      std::string scope = "texture";
+      if (!diffs.begin()->second.empty()) {
+        scope += (":" + diffs.begin()->second);
+      }
+      return scope;
+    }
+    else {
+      return "global";
+    }
+  }
+
+  void ApplyConsumerScopeToInputs(const ExprNode* expr) {
+    std::string scope;
     auto consumer_scopes_it = consumer_storage_scopes_.find(expr);
     if (consumer_scopes_it != consumer_storage_scopes_.end()) {
       std::string consumer_scope = GetConsumerScope(consumer_scopes_it->second);
@@ -152,22 +195,20 @@ class StorageInfo : private ExprVisitor{
       bool expr_is_rgba_vectorizable = false;
       if (const auto* ttype = expr->checked_type().as<TensorTypeNode>()) {
         if (ttype->shape.size() == 5) {
-          auto inner_dim = ttype->shape.back().as<IntImmNode>();
-          if (inner_dim && inner_dim->value == 4) {
-            expr_is_rgba_vectorizable = true;
+          scope = ScopeSuffix(ttype->shape);
+          if (scope != "global") {
+            auto inner_dim = ttype->shape.back().as<IntImmNode>();
+            if (inner_dim && inner_dim->value == 4) {
+              expr_is_rgba_vectorizable = true;
+            }
           }
         }
       }
 
       // Only propagate texture scope from consumers to input expr if
       // the input shape of the input expr is rgba vectorizable.
-      if (consumer_scope == "texture") {
+      if (consumer_scope.find("texture") != std::string::npos) {
         if (expr_is_rgba_vectorizable) {
-          std::string scope = consumer_scope;
-          // Apply any provided storage scope suffix before assignment
-          if (!scope_suffix.empty()) {
-            scope += (":" + scope_suffix);
-          }
           storage_scope_[expr].push_back(scope);
         }
       } else {
@@ -235,13 +276,14 @@ class StorageInfo : private ExprVisitor{
 
   std::string GetConsumerScope(const std::vector<std::string>& consumer_scopes) const {
     if (!consumer_scopes.size()) { return "global"; }
-    std::string ref_scope = consumer_scopes[0];
+    std::string texture_tag = "texture";
+    //std::string ref_scope = consumer_scopes[0];
     for (auto& consumer_scope : consumer_scopes) {
-      if (consumer_scope != ref_scope) {
+      if (consumer_scope.find(texture_tag) == std::string::npos) {
         return "global";
       }
     }
-    return ref_scope;
+    return texture_tag;
   }
 
   bool HasMixedStorageOutputs(const ExprNode* expr) {
@@ -261,7 +303,8 @@ class StorageInfo : private ExprVisitor{
     if (auto attrs = call->attrs.as<Conv2DAttrs>()) {
       if (attrs->data_layout == "NCHW4c" && attrs->kernel_layout == "OIHW4o") {
         supports_texture_storage = true;
-      } else if (attrs->data_layout == "NHWC" && attrs->kernel_layout == "HWIO") {
+      } else if (attrs->data_layout == "NHWC4c" &&
+        (attrs->kernel_layout == "HWOI4o" || attrs->kernel_layout == "HWIO4o" || attrs->kernel_layout == "OIHW4o")) {
         supports_texture_storage = true;
       }
     } else if (auto attrs = call->attrs.as<GlobalPool2DAttrs>()) {
@@ -324,7 +367,7 @@ Array<tir::Buffer> CollectBufferBinds(const Call& call, const Map<Expr, runtime:
     }
 
     PrimType storage_type(ttype->dtype);
-    tir::Var var = GetStorageScope(expr, storage_map, index) == "texture" ? tir::Var(name, TextureType(storage_type)) : tir::Var(name, PointerType(storage_type));
+    tir::Var var = std::string(GetStorageScope(expr, storage_map, index)).find("texture") != std::string::npos ? tir::Var(name, TextureType(storage_type)) : tir::Var(name, PointerType(storage_type));
     return tir::Buffer(var, ttype->dtype, ttype->shape, Array<PrimExpr>{}, Integer(0), name, scope, -1, 0, tir::BufferType::kDefault);
   };
 
