@@ -45,9 +45,9 @@ def split_to_chunks(trip_count, block):
     return chunks, block, tail
 
 
-def pack_input(Input, batch, in_channel_chunks, in_channel_block, in_channel_tail, in_height, in_width):
+def pack_input(Input, layout, batch, in_channel_chunks, in_channel_block, in_channel_tail, in_height, in_width):
     pad_value = tvm.tir.const(0, Input.dtype)
-    def _reorder_data(*indices):
+    def _reorder_data_nchw(*indices):
         condition = []
         condition.append(indices[1] == in_channel_chunks - 1)
         condition.append(indices[4] >= in_channel_tail)
@@ -57,23 +57,44 @@ def pack_input(Input, batch, in_channel_chunks, in_channel_block, in_channel_tai
                 pad_value,
                 Input[indices[0],indices[1] * in_channel_block + indices[4], indices[2], indices[3]])
 
+    def _reorder_data_nhwc(*indices):
+        condition = []
+        condition.append(indices[3] == in_channel_chunks - 1)
+        condition.append(indices[4] >= in_channel_tail)
+        condition = tvm.tir.all(*condition)
+        return tvm.tir.if_then_else(
+                condition,
+                pad_value,
+                Input[indices[0],indices[1], indices[2], indices[3] * in_channel_block + indices[4]])
+
     # compute:
-    reordered_data = te.compute(
-        [batch, in_channel_chunks, in_height, in_width, in_channel_block],
-        _reorder_data,
-        name="input_pack",
-        tag="input_pack",
-    )
+    if layout == "NCHW":
+        reordered_data = te.compute(
+            [batch, in_channel_chunks, in_height, in_width, in_channel_block],
+            _reorder_data_nchw,
+            name="input_pack",
+            tag="input_pack",
+        )
+    elif layout == "NHWC":
+        reordered_data = te.compute(
+            [batch, in_height, in_width, in_channel_chunks, in_channel_block],
+            _reorder_data_nhwc,
+            name="input_pack",
+            tag="input_pack",
+        )
+    else:
+        assert False, "Adreno util function pack_input does not accept unknown layout"
     return reordered_data
 
 
 def pack_filter(Filter,
+                layout,
                 out_channel_chunks, out_channel_block, out_channel_tail,
                 in_filter_channels,
                 in_data_channel_chunks, in_data_channel_block, in_data_channel_tail,
                 kernel_h, kernel_w):
     pad_value = tvm.tir.const(0, Filter.dtype)
-    def _reorder_weights_depthwise(*indices):
+    def _reorder_weights_depthwise_oihw(*indices):
         conditionA = []
         conditionA.append(indices[0] == out_channel_chunks - 1)
         conditionA.append(indices[4] >= out_channel_tail)
@@ -84,7 +105,18 @@ def pack_filter(Filter,
                 pad_value,
                 Filter[indices[0] * out_channel_block + indices[4], indices[1], indices[2], indices[3]])
 
-    def _reorder_weights(*indices):
+    def _reorder_weights_depthwise_hwoi(*indices):
+        conditionA = []
+        conditionA.append(indices[2] == out_channel_chunks - 1)
+        conditionA.append(indices[4] >= out_channel_tail)
+        conditionAT = tvm.tir.all(*conditionA)
+
+        return tvm.tir.if_then_else(
+                conditionAT,
+                pad_value,
+                Filter[indices[0], indices[1], indices[2] * out_channel_block + indices[4], indices[3]])
+
+    def _reorder_weights_oihw(*indices):
         conditionA = []
         conditionA.append(indices[0] == out_channel_chunks - 1)
         conditionA.append(indices[4] >= out_channel_tail)
@@ -98,20 +130,56 @@ def pack_filter(Filter,
                 conditionOT,
                 pad_value,
                 Filter[indices[0] * out_channel_block + indices[4], indices[1], indices[2], indices[3]])
+
+    def _reorder_weights_hwio(*indices):
+        conditionA = []
+        conditionA.append(indices[3] == out_channel_chunks - 1)
+        conditionA.append(indices[4] >= out_channel_tail)
+        conditionAT = tvm.tir.all(*conditionA)
+
+        conditionO = []
+        conditionO.append(conditionAT)
+        conditionO.append(indices[2] >= in_data_channel_chunks * in_data_channel_block + in_data_channel_tail)
+        conditionOT = tvm.tir.any(*conditionO)
+        return tvm.tir.if_then_else(
+                conditionOT,
+                pad_value,
+                Filter[indices[0], indices[1], indices[2], indices[3] * out_channel_block + indices[4]])
+
     if in_filter_channels == 1:
-        reordered_filter = te.compute(
-            [out_channel_chunks, in_filter_channels, kernel_h, kernel_w, out_channel_block],
-            _reorder_weights_depthwise,
-            name="filter_pack",
-            tag="filter_pack",
-        )
+        if layout == "OIHW":
+            reordered_filter = te.compute(
+                [out_channel_chunks, in_filter_channels, kernel_h, kernel_w, out_channel_block],
+                _reorder_weights_depthwise_oihw,
+                name="filter_pack",
+                tag="filter_pack",
+            )
+        elif layout == "HWOI":
+            reordered_filter = te.compute(
+                [kernel_h, kernel_w, out_channel_chunks, in_filter_channels, out_channel_block],
+                _reorder_weights_depthwise_hwoi,
+                name="filter_pack",
+                tag="filter_pack",
+            )
+        else:
+            assert False, "Adreno util function def pack_filter does not accept unknown layout"
     else:
-        reordered_filter = te.compute(
-            [out_channel_chunks, in_filter_channels, kernel_h, kernel_w, out_channel_block],
-            _reorder_weights,
-            name="filter_pack",
-            tag="filter_pack",
-        )
+        if layout == "OIHW":
+            reordered_filter = te.compute(
+                [out_channel_chunks, in_filter_channels, kernel_h, kernel_w, out_channel_block],
+                _reorder_weights_oihw,
+                name="filter_pack",
+                tag="filter_pack",
+            )
+        elif layout == "HWIO":
+            reordered_filter = te.compute(
+                [kernel_h, kernel_w, in_filter_channels, out_channel_chunks, out_channel_block],
+                _reorder_weights_hwio,
+                name="filter_pack",
+                tag="filter_pack",
+            )
+        else:
+            assert False, "Adreno util function def pack_filter does not accept unknown layout"
     return reordered_filter
 
 
@@ -155,6 +223,7 @@ def expand_spatial_dimensions(in_height, in_width,
 
 
 def add_pad(data,
+            layout,
             in_height, in_width,
             out_height_orig, out_width_orig,
             kernel_h, kernel_w,
@@ -168,15 +237,28 @@ def add_pad(data,
     )
 
     # compute graph
-    pad_before = [0, 0, pad_top, pad_left, 0]
-    pad_after = [0, 0, pad_down, pad_right, 0]
+    if layout == "NCHW":
+        y_axis = 2
+        x_axis = 3
+    elif layout == "NHWC":
+        y_axis = 1
+        x_axis = 2
+    else:
+        assert False, "not supported layout in adrenno util add_pad"
+    pad_before = [0, 0, 0, 0, 0]
+    pad_after = [0, 0, 0, 0, 0]
+    pad_before[y_axis] = pad_top
+    pad_before[x_axis] = pad_left
+    pad_after[y_axis] = pad_down
+    pad_after[x_axis] = pad_right
+
     # calculation of real used input size:
     input_latest_w = (out_width_orig - 1) * stride_w + (kernel_w - 1) * dilation_w + 1
     input_latest_h = (out_height_orig - 1) * stride_h + (kernel_h - 1) * dilation_h + 1
-    if input_latest_w < in_width + pad_before[3] + pad_after[3]:
-        pad_after[3] -= in_width + pad_before[3] + pad_after[3] - input_latest_w
-    if input_latest_h < in_height + pad_before[2] + pad_after[2]:
-        pad_after[2] -= in_height + pad_before[2] + pad_after[2] - input_latest_h
+    if input_latest_w < in_width + pad_before[x_axis] + pad_after[x_axis]:
+        pad_after[x_axis] -= in_width + pad_before[x_axis] + pad_after[x_axis] - input_latest_w
+    if input_latest_h < in_height + pad_before[y_axis] + pad_after[y_axis]:
+        pad_after[y_axis] -= in_height + pad_before[y_axis] + pad_after[y_axis] - input_latest_h
     return nn.pad(data, pad_before, pad_after, name="pad_temp")
 
 
@@ -215,3 +297,12 @@ def bind_data_copy(stage, axis_to_vectorize = None):
         else:
             stage.bind(fused, te.thread_axis("blockIdx.x"))
             stage.bind(*axes[-1:], te.thread_axis("threadIdx.x"))
+
+def get_texture_storage(shape):
+    limit = 16384
+    if shape[0] * shape[1] * shape[2] < limit and shape[3] < limit:
+        return "texture"
+    elif shape[0] * shape[1] < limit and shape[2] * shape[3] < limit:
+        return "texture:nhwc"
+    else:
+        return "texture:weight"
