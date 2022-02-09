@@ -88,8 +88,9 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
         Filter = tvm.te.placeholder(kshape, Filter.dtype, name="kernel_placeholder")
       else:
         convert_from4d = True
-        Input = pack_input(Input, batch, in_channel_chunks, in_channel_block, in_channel_tail, in_height, in_width)
+        Input = pack_input(Input, "NCHW", batch, in_channel_chunks, in_channel_block, in_channel_tail, in_height, in_width)
         Filter = pack_filter(Filter,
+                            "OIHW",
                             out_channel_chunks, out_channel_block, out_channel_tail,
                             in_filter_channels,
                             in_channel_chunks, in_channel_block, in_channel_tail,
@@ -106,6 +107,7 @@ def compute_conv2d_NCHWc_KCRSk(Input, Filter, stride, padding, dilation, out_dty
                               stride_h, stride_w)
 
     temp = add_pad(Input,
+            "NCHW",
             in_height, in_width,
             out_height_orig, out_width_orig,
             kernel_h, kernel_w,
