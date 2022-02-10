@@ -43,6 +43,16 @@ bool DenseRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
   const auto* data = types[0].as<TensorTypeNode>();
   const auto* weight = types[1].as<TensorTypeNode>();
   if (data == nullptr) return false;
+    std::cout << " >>> dshape: ";
+    for (int i = 0; i < data->shape.size(); ++i) {
+        std::cout << data->shape[i] << "x";
+    }
+    std::cout << std::endl;
+    std::cout << " >>> shape: ";
+    for (int i = 0; i < weight->shape.size(); ++i) {
+        std::cout << weight->shape[i] << "x";
+    }
+    std::cout << std::endl;
 
   const AttrType* param = attrs.as<AttrType>();
   ICHECK(param != nullptr);
@@ -51,6 +61,7 @@ bool DenseRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
 
   Array<tvm::PrimExpr> oshape = data->shape;
   if (param->units.defined()) {
+      std::cout << " >>> nn.h DenseRel: units defined" << std::endl;
     Array<tvm::PrimExpr> dshape = data->shape;
     // validate the weight shape is proper if defined
     // Assign weight type
@@ -70,14 +81,15 @@ bool DenseRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
     }
     oshape.Set((oshape.size() - 1), param->units);
   } else {
+      std::cout << " >>> nn.h DenseRel: units are not defined" << std::endl;
     if (weight == nullptr) return false;
     Array<tvm::PrimExpr> wshape = weight->shape;
-    ICHECK(static_cast<int>(weight->shape.size()) == 2);
-    if (!data->shape.back().as<tir::AnyNode>()) {
-      ICHECK(reporter->AssertEQ(data->shape[data->shape.size() - 1], weight->shape[1]))
-          << "DenseRel: input dimension doesn't match,"
-          << " data shape=" << data->shape << ", weight shape=" << weight->shape;
-    }
+    //ICHECK(static_cast<int>(weight->shape.size()) == 2) << "actual: " << weight->shape.size();
+    //if (!data->shape.back().as<tir::AnyNode>()) {
+    //  ICHECK(reporter->AssertEQ(data->shape[data->shape.size() - 1], weight->shape[1]))
+    //      << "DenseRel: input dimension doesn't match,"
+    //      << " data shape=" << data->shape << ", weight shape=" << weight->shape;
+    //}
     oshape.Set((oshape.size() - 1), wshape[0]);
   }
 

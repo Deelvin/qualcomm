@@ -639,8 +639,8 @@ static inline Expr Conv2D(Expr data, Expr weight, Array<IndexExpr> strides,
                                "nn.conv2d");
 }
 
-static inline Expr Dense(Expr data, Expr weight, IndexExpr units, DataType out_dtype) {
-  return MakeDense(data, weight, units, out_dtype);
+static inline Expr Dense(Expr data, Expr weight, IndexExpr units, DataType out_dtype, std::string layout) {
+  return MakeDense(data, weight, units, out_dtype, layout);
 }
 
 static inline Expr Sum(Expr data, Array<Integer> axis, bool keepdims, bool exclude) {

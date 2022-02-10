@@ -86,7 +86,7 @@ Expr MakeQuantizedDense(Expr data, Expr weight, Expr input_zero_point, Expr kern
 
 Expr DenseFirstTerm(const Expr& quantized_data, const Expr& quantized_kernel,
                     const DenseAttrs* attrs) {
-  return Dense(quantized_data, quantized_kernel, attrs->units, attrs->out_dtype);
+  return Dense(quantized_data, quantized_kernel, attrs->units, attrs->out_dtype, "NC");
 }
 
 Expr DenseSecondTerm(const Expr& quantized_data, const Expr& kernel_zero_point) {

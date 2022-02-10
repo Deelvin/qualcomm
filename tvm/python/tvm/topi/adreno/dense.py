@@ -25,29 +25,21 @@ from .. import nn
 from .. import tag
 from .. import generic
 from ..utils import traverse_inline, get_const_tuple
+from .utils import getDiv, split_dim
 
 logger = logging.getLogger("topi")
 
 
-@autotvm.register_topi_compute("dense.adreno")
+@autotvm.register_topi_compute("dense.image2d")
 def dense(cfg, data, weight, bias=None, out_dtype=None):
     args = {"accumulator": "float16"}
     return dense_comp(cfg, data, weight, bias, out_dtype, args)
 
 
-@autotvm.register_topi_compute("dense_acc32.adreno")
+@autotvm.register_topi_compute("dense_acc32.image2d")
 def dense_acc32(cfg, data, weight, bias=None, out_dtype=None):
     args = {"accumulator": "float32"}
     return dense_comp(cfg, data, weight, bias, out_dtype, args)
-
-
-def getDiv(value, start):
-    div = 1
-    for d in range(start,0,-1):
-        if (value % d) == 0:
-            div = d
-            break
-    return div
 
 
 def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
@@ -77,6 +69,7 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         2-D with shape [batch, out_dim]
     """
     assert len(data.shape) == 2, "only support 2-dim dense"
+    assert len(weight.shape) == 2, "only support 2-dim weights"
     if bias is not None:
         assert len(bias.shape) == 1
     if out_dtype is None:
@@ -90,12 +83,6 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
     channel_chunk = in_dim // channel_block
     out_chunk = out_dim // channel_block
 
-    def split_dim(dim_shape):
-        h = getDiv(dim_shape, 4)
-        dim_shape = dim_shape // h
-        ch = getDiv(dim_shape, 64)
-        w = dim_shape // ch
-        return ch, h, w
     channel_chunk, height, width = split_dim(channel_chunk)
     red_dim = channel_chunk * channel_block
 
@@ -112,6 +99,8 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         name="weight_pack",
         tag="weight_pack",
     )
+    print("data: ", data)
+    print("weight: ", weight)
 
     kcc = te.reduce_axis((0, channel_chunk), name="kcc")
     kcb = te.reduce_axis((0, channel_block), name="kcb")
@@ -125,15 +114,14 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         attrs={"layout_free_placeholders": [weight]},
     )
     dummy_cast = te.compute((batch, out_chunk, channel_block), lambda b,o,cb: matmul[b,o,cb].astype(out_dtype), tag="dummy_cast")
-    #return te.compute((batch, out_dim), lambda n,o: dummy_cast[n,o//(channel_block*channel_chunk*width),(o//(channel_block*channel_chunk))%width,(o//channel_block)%channel_chunk,o%channel_block], tag="cast_from_acc" + args["accumulator"][-2:])
     return te.compute((batch, out_dim), lambda n,o: dummy_cast[n,o//channel_block,o%channel_block], tag="cast_from_acc" + args["accumulator"][-2:])
 
 
-@autotvm.register_topi_schedule("dense.adreno")
+@autotvm.register_topi_schedule("dense.image2d")
 def schedule_dense(cfg, outs):
     return schedule_dense_impl(cfg, outs, tag="cast_from_acc16")
 
-@autotvm.register_topi_schedule("dense_acc32.adreno")
+@autotvm.register_topi_schedule("dense_acc32.image2d")
 def schedule_dense_acc32(cfg, outs):
     return schedule_dense_impl(cfg, outs, tag="cast_from_acc32")
 
@@ -185,12 +173,11 @@ def _schedule_dense(cfg, s, output):
     copy_to_texture(WT)
 
     b, o, ob = s[dummy].op.axis
-    cfg.define_split("tile_fc", o, num_outputs=3)
-    #cfg.define_split("tile_fc", o, num_outputs=3,
-    #            filter=lambda entity: entity.size[1] <= 16 and entity.size[2] >= 8 and entity.size[2] < 512 )
+    #cfg.define_split("tile_fc", o, num_outputs=3)
+    cfg.define_split("tile_fc", o, num_outputs=3,
+                filter=lambda entity: entity.size[1] <= 16 and entity.size[2] >= 8 and entity.size[2] < 512 )
     bo, vo, to = cfg["tile_fc"].apply(s, dummy, o)
 
-    #b = s[dummy].fuse(b, h, w)
     s[dummy].bind(b, te.thread_axis("blockIdx.y"))
     s[dummy].bind(bo, te.thread_axis("blockIdx.x"))
     s[dummy].bind(to, te.thread_axis("threadIdx.x"))

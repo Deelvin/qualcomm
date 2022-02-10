@@ -927,6 +927,7 @@ struct AvgPool3DAttrs : public tvm::AttrsNode<AvgPool3DAttrs> {
 struct DenseAttrs : public tvm::AttrsNode<DenseAttrs> {
   IndexExpr units;
   tvm::String auto_scheduler_rewritten_layout;  // The layout after auto-scheduler's layout rewrite
+  tvm::String layout;
   DataType out_dtype;
 
   TVM_DECLARE_ATTRS(DenseAttrs, "relay.attrs.DenseAttrs") {
@@ -936,6 +937,7 @@ struct DenseAttrs : public tvm::AttrsNode<DenseAttrs> {
     TVM_ATTR_FIELD(out_dtype)
         .set_default(NullValue<DataType>())
         .describe("Output data type, set to explicit type under mixed precision setting");
+    TVM_ATTR_FIELD(layout).set_default("NC").describe("Layout.");
   }
 };
 

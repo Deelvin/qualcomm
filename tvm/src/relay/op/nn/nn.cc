@@ -166,15 +166,29 @@ Useful for
 TVM_REGISTER_NODE_TYPE(DenseAttrs);
 
 // Positional relay function to create dense operator used by frontend FFI.
-Expr MakeDense(Expr data, Expr weight, IndexExpr units, DataType out_dtype) {
+Expr MakeDense(Expr data, Expr weight, IndexExpr units, DataType out_dtype, String layout) {
   auto attrs = make_object<DenseAttrs>();
   attrs->units = units;
   attrs->out_dtype = out_dtype;
+  attrs->layout = layout;
   static const Op& op = Op::Get("nn.dense");
   return Call(op, {data, weight}, Attrs(attrs), {});
 }
 
 TVM_REGISTER_GLOBAL("relay.op.nn._make.dense").set_body_typed(MakeDense);
+
+/*! \brief take arbitrary input layout and copy to output */
+inline Array<Array<Layout>> DenseInferCorrectLayout(const Attrs& attrs,
+                                                    const Array<Layout>& new_in_layouts,
+                                                    const Array<Layout>& old_in_layouts,
+                                                    const Array<tvm::relay::Type>& old_in_types) {
+  DenseAttrs* params = const_cast<DenseAttrs*>(attrs.as<DenseAttrs>());
+  std::cout << " >>> DenseInferCorrectLayout, layout: " << params->layout << std::endl;
+  //std::cout << " >>> DenseInferCorrectLayout, new_in_layouts[0]: " << new_in_layouts[0] << std::endl;
+  std::cout << " >>> DenseInferCorrectLayout, old_in_layout[0]: " << old_in_layouts[0] << std::endl;
+  return Array<Array<Layout> >{{params->layout, params->layout}, {params->layout}};
+  //return Array<Array<Layout> >{{"NC", params->layout}, {params->layout}};
+}
 
 RELAY_REGISTER_OP("nn.dense")
     .describe(R"code(Applies a linear transformation: :math:`Y = XW^T`.
@@ -189,6 +203,7 @@ RELAY_REGISTER_OP("nn.dense")
     .add_argument("data", "nD Tensor", "Input data.")
     .add_argument("weight", "2D Tensor", "Weight matrix.")
     .set_support_level(1)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", DenseInferCorrectLayout)
     .add_type_rel("Dense", DenseRel<DenseAttrs>);
 
 // relay.nn.contrib_dense_pack

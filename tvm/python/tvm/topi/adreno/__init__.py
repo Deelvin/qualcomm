@@ -24,3 +24,4 @@ from .dense import *
 from .depthwise_conv2d_nhwc import *
 from .pooling import *
 from .conv2d_alter_op import *
+from .dense_alter_op import *
