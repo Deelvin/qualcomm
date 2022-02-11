@@ -321,6 +321,10 @@ class StorageInfo : private ExprVisitor{
       if (attrs->layout == "NCHW4c") {
         supports_texture_storage = true;
       }
+    } else if (auto attrs = call->attrs.as<DenseAttrs>()) {
+      if (attrs->layout == "NHWC4c") {
+        supports_texture_storage = true;
+      }
     }
 
     return supports_texture_storage;

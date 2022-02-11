@@ -183,10 +183,12 @@ inline Array<Array<Layout>> DenseInferCorrectLayout(const Attrs& attrs,
                                                     const Array<Layout>& old_in_layouts,
                                                     const Array<tvm::relay::Type>& old_in_types) {
   DenseAttrs* params = const_cast<DenseAttrs*>(attrs.as<DenseAttrs>());
-  std::cout << " >>> DenseInferCorrectLayout, layout: " << params->layout << std::endl;
+  //std::cout << " >>> DenseInferCorrectLayout, layout: " << params->layout << std::endl;
   //std::cout << " >>> DenseInferCorrectLayout, new_in_layouts[0]: " << new_in_layouts[0] << std::endl;
-  std::cout << " >>> DenseInferCorrectLayout, old_in_layout[0]: " << old_in_layouts[0] << std::endl;
-  return Array<Array<Layout> >{{params->layout, params->layout}, {params->layout}};
+  //std::cout << " >>> DenseInferCorrectLayout, old_in_layout[0]: " << old_in_layouts[0] << std::endl;
+  //return Array<Array<Layout> >{{"NC", params->layout}, {"NC"}};
+  return Array<Array<Layout> >{{"NC", "NC"}, {"NC"}};
+  //return Array<Array<Layout> >{{params->layout, params->layout}, {params->layout}};
   //return Array<Array<Layout> >{{"NC", params->layout}, {params->layout}};
 }
 

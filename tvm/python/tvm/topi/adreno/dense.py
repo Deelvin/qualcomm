@@ -17,6 +17,7 @@
 # pylint: disable=invalid-name, unused-argument
 """Schedule for dense operator"""
 import logging
+import tvm
 from tvm import te, tir
 import tvm.autotvm as autotvm
 from tvm.autotvm.task.space import SplitEntity
@@ -25,7 +26,7 @@ from .. import nn
 from .. import tag
 from .. import generic
 from ..utils import traverse_inline, get_const_tuple
-from .utils import getDiv, split_dim
+from .utils import getDiv, split_dim, get_texture_storage, bind_data_copy
 
 logger = logging.getLogger("topi")
 
@@ -69,14 +70,19 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         2-D with shape [batch, out_dim]
     """
     assert len(data.shape) == 2, "only support 2-dim dense"
-    assert len(weight.shape) == 2, "only support 2-dim weights"
+    #assert len(weight.shape) == 2, "only support 2-dim weights"
     if bias is not None:
         assert len(bias.shape) == 1
     if out_dtype is None:
         out_dtype = data.dtype
     batch, in_dim = data.shape
 
-    out_dim, red_dim = weight.shape
+    if len(weight.shape) == 2:
+        out_dim, red_dim = weight.shape
+    else:
+        out_dim, h, w, c, out_block = weight.shape
+        red_dim = h * w * c
+        out_dim = out_dim * out_block
     assert in_dim == red_dim
 
     channel_block = 4
@@ -93,14 +99,17 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         tag="input_pack",
     )
 
-    weight = te.compute(
-        [out_chunk, height, width, red_dim, channel_block],
-        lambda oc, yy, xx, rd, ob: weight[oc * channel_block + ob, yy*red_dim*width + xx*red_dim + rd].astype(args["accumulator"]),
-        name="weight_pack",
-        tag="weight_pack",
-    )
-    print("data: ", data)
-    print("weight: ", weight)
+    if len(weight.shape) == 2:
+        if autotvm.GLOBAL_SCOPE.in_tuning == True:
+            wshape = (out_chunk, height, width, red_dim, channel_block)
+            weight = tvm.te.placeholder(wshape, weight.dtype, name="weight_placeholder")
+        else:
+            weight = te.compute(
+                [out_chunk, height, width, red_dim, channel_block],
+                lambda oc, yy, xx, rd, ob: weight[oc * channel_block + ob, yy*red_dim*width + xx*red_dim + rd].astype(args["accumulator"]),
+                name="weight_pack",
+                tag="weight_pack",
+            )
 
     kcc = te.reduce_axis((0, channel_chunk), name="kcc")
     kcb = te.reduce_axis((0, channel_block), name="kcb")
@@ -144,33 +153,21 @@ def _schedule_dense(cfg, s, output):
     data, weights = s[matmul].op.input_tensors
 
     s[data].compute_inline()
-    s[weights].compute_inline()
+    if len(weights.shape) == 2:
+        s[weights].compute_inline()
+    #s[weights].compute_inline()
     _, _, kcc, kcb = s[matmul].op.reduce_axis
     cfg.define_split("tile_k", kcc, num_outputs=2)
 
     latest = s.outputs[0].output(0)
 
     # create cache stage
-    def get_texture_storage(shape):
-        limit = 16384
-        if shape[0] * shape[1] * shape[2] < limit and shape[3] < limit:
-            return "texture"
-        elif shape[0] * shape[1] < limit and shape[2] * shape[3] < limit:
-            return "texture:nhwc"
-        else:
-            return "texture:weight"
-
     AT = s.cache_read(data, get_texture_storage(data.shape), [matmul])
-    WT = s.cache_read(weights, get_texture_storage(weights.shape), [matmul])
-    def copy_to_texture(stage):
-        axes = s[stage].op.axis
-        fused = s[stage].fuse(*axes[:-1])
-        block, thread = s[stage].split(fused, factor=32)
-        s[stage].vectorize(axes[-1])
-        s[stage].bind(block, te.thread_axis("blockIdx.x"))
-        s[stage].bind(thread, te.thread_axis("threadIdx.x"))
-    copy_to_texture(AT)
-    copy_to_texture(WT)
+    bind_data_copy(s[AT])
+    if (autotvm.GLOBAL_SCOPE.in_tuning or
+        isinstance(weights.op, tvm.te.ComputeOp) and "weight_pack" in weights.op.tag):
+        WT = s.cache_read(weights, get_texture_storage(weights.shape), [matmul])
+        bind_data_copy(s[WT])
 
     b, o, ob = s[dummy].op.axis
     #cfg.define_split("tile_fc", o, num_outputs=3)
