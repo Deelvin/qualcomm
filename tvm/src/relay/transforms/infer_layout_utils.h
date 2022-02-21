@@ -76,7 +76,7 @@ inline Layout AdjustSubordinateFactors(const Layout& src_layout, const Layout& o
 
       // 4) b) If shape is not 1, retain the factor.
       if (!is_shape_one) {
-        auto new_shape_val = src_layout.FactorOf(dual_axis)[0];
+        auto new_shape_val = src_layout.FactorOf(dual_axis);
         new_layout += std::to_string(new_shape_val);
       }
     }

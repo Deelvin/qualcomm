@@ -81,8 +81,6 @@ def _alter_dense_layout(attrs, inputs, tinfos, out_type):
             weight_transform = relay.layout_transform(weight_transform, "NKB", layout)
             layout = "NH%dhRB" % width
             weight_transform = relay.layout_transform(weight_transform, "NHRB",layout) # OHWC4o
-            layout = "NC{}c{}c{}n".format(width, red_dim, channel_block)
-            print("Layout: ", layout)
 
             #layout = "NK%dk" % channel_block
             #data_transform = relay.layout_transform(inputs[0], "NK", layout)
@@ -91,8 +89,7 @@ def _alter_dense_layout(attrs, inputs, tinfos, out_type):
             #layout = "NH%dhCB" % width
             #data_transform = relay.layout_transform(data_transform, "NHCB",layout) # NHWC4c
             #return relay.nn.dense(data_transform, weight_transform, None, out_dtype, "NHWC4c")
-            #return relay.nn.dense(inputs[0], weight_transform, None, out_dtype, "NHWC4c")
-            return relay.nn.dense(inputs[0], inputs[1], None, out_dtype, layout)
+            return relay.nn.dense(inputs[0], weight_transform, None, out_dtype, "NHWC4c")
 
     return None
 
