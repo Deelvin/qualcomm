@@ -237,7 +237,7 @@ class Layout : public ObjectRef {
    *         or the size of \p axis itself (if \p axis is a subordinate-axis).
    *         Return -1 if \p axis is not in the layout the layout is undefined.
    */
-  int32_t FactorOf(const LayoutAxis& axis) const;
+  std::vector<int32_t> FactorOf(const LayoutAxis& axis) const;
 
   /*!
    * \brief Whether the layout contains an axis.

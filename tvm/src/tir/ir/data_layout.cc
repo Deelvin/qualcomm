@@ -125,15 +125,17 @@ Layout::Layout(const std::string& name) {  // NOLINT(*)
   }
 
   // validate layout
+  std::cout << " >>> Layout::Layout(const std::string& name) 1" << std::endl;
   std::vector<bool> exist_axis(256, false);
   for (const IterVar& v : node->axes) {
     auto axis_str = v->var.get()->name_hint.operator std::string();
     ICHECK_EQ(axis_str.size(), 1);
     char axis = axis_str[0];
     ICHECK((axis >= 'a' && axis <= 'z') || (axis >= 'A' && axis <= 'Z'));
-    ICHECK(!exist_axis[axis]) << "Invalid layout " << name << ": duplicate axis " << axis;
+    //ICHECK(!exist_axis[axis]) << "Invalid layout " << name << ": duplicate axis " << axis;
     exist_axis[axis] = true;
   }
+  std::cout << " >>> Layout::Layout(const std::string& name) 2" << std::endl;
   for (const IterVar& v : node->axes) {
     char axis = v->var.get()->name_hint.operator std::string()[0];
     if (axis >= 'a' && axis <= 'z') {
@@ -142,9 +144,11 @@ Layout::Layout(const std::string& name) {  // NOLINT(*)
     }
   }
   data_ = std::move(node);
+  std::cout << " >>> Layout::Layout(const std::string& name) 3" << std::endl;
 }
 
 Layout Layout::SubLayout(size_t pos, size_t len) const {
+  std::cout << " >>> Layout Layout::SubLayout(size_t pos, size_t len) 1" << std::endl;
   if (!defined() || pos > ndim()) return Layout::Undef();
   if (len == 0) return Layout(Array<IterVar>());
   if (pos + len > ndim()) len = ndim() - pos;
@@ -157,6 +161,7 @@ Layout Layout::SubLayout(size_t pos, size_t len) const {
 }
 
 Layout Layout::Split(const LayoutAxis& axis, size_t target_pos, int32_t factor) const {
+  std::cout << " >>> Layout Layout::Split(const LayoutAxis& axis, size_t target_pos, int32_t factor) 1" << std::endl;
   if (!defined()) return Layout::Undef();
   const std::string& name = operator->()->name;
   const auto axes = operator->()->axes;
@@ -168,6 +173,7 @@ Layout Layout::Split(const LayoutAxis& axis, size_t target_pos, int32_t factor) 
       << "Axis " << axis << " has already been split in " << name;
   ICHECK(factor > 0) << "Invalid split size " << factor;
   Array<IterVar> new_layout;
+  std::cout << "layout: " << this->name() << std::endl;
   for (size_t i = 0; i <= this->ndim(); ++i) {
     if (i == target_pos) {
       new_layout.push_back(IterVar(Range(PrimExpr(0), PrimExpr(factor)),
@@ -179,18 +185,25 @@ Layout Layout::Split(const LayoutAxis& axis, size_t target_pos, int32_t factor) 
   return Layout(new_layout);
 }
 
-int32_t Layout::FactorOf(const LayoutAxis& axis) const {
-  if (!defined()) return -1;
+std::vector<int32_t> Layout::FactorOf(const LayoutAxis& axis) const {
+  std::cout << " >>> int32_t Layout::FactorOf(const LayoutAxis& axis) 1, axis: " << axis << std::endl;
+  if (!defined()) return {-1};
   const LayoutAxis& sub = axis.ToSubordinate();
-  if (!this->defined()) return -1;
+  std::cout << " >>> int32_t Layout::FactorOf(const LayoutAxis& axis) 2, sub_axis: " << sub << std::endl;
+  std::cout << " >>> int32_t Layout::FactorOf(const LayoutAxis& axis) 2.1, axes: " << operator->()->axes << std::endl;
+  if (!this->defined()) return {-1};
+  std::vector<int32_t> factors;
   for (const IterVar& itvar : operator->()->axes) {
     if (sub == LayoutAxis::Get(itvar)) {
       const auto* factor = itvar->dom->extent.as<IntImmNode>();
       ICHECK(factor);
-      return factor->value;
+  std::cout << " >>> int32_t Layout::FactorOf(const LayoutAxis& axis) 3, factor->value: " << factor->value << std::endl;
+      factors.push_back(factor->value);
     }
   }
-  return -1;
+  if (factors.empty())
+      return {-1};
+  return factors;
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -201,6 +214,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
 
 inline bool GetStoreRule(Array<PrimExpr>* rule, const Layout& src_layout,
                          const Layout& dst_layout) {
+  std::cout << " >>> GetStoreRule 1" << std::endl;
   if (!src_layout.defined() || src_layout.name().empty() || !dst_layout.defined() ||
       dst_layout.name().empty()) {
     return false;
@@ -216,7 +230,14 @@ inline bool GetStoreRule(Array<PrimExpr>* rule, const Layout& src_layout,
       if (store_axis.ToPrimal() == orig_axis.ToPrimal()) {
         if (orig_axis.IsPrimal()) {
           PrimExpr orig_var = orig_axis_impl->var;
-          const int32_t factor = src_layout.FactorOf(orig_axis);
+          const auto factors = src_layout.FactorOf(orig_axis);
+          std::cout << " >>> GetStoreRule, 2: orig_axis: " << orig_axis << ", orig_axis_impl: " << orig_axis_impl << ", factors: ";
+          for (auto it : factors) {
+              std::cout << it << "x";
+          }
+          std::cout << std::endl;
+          const auto factor = factors[0];
+          std::cout << " >>> GetStoreRule, 2: orig_axis: " << orig_axis << ", orig_axis_impl: " << orig_axis_impl << ", factor: " << factor << std::endl;
           if (factor > 0) {
             orig_var = orig_var * PrimExpr(factor);
           }
@@ -232,7 +253,9 @@ inline bool GetStoreRule(Array<PrimExpr>* rule, const Layout& src_layout,
     }
 
     if (store_axis.IsPrimal()) {
-      const int32_t factor = dst_layout.FactorOf(store_axis);
+      //const int32_t factor = dst_layout.FactorOf(store_axis);
+      const auto factors = src_layout.FactorOf(store_axis);
+      const auto factor = factors[0];
       if (factor > 0) {
         store = indexdiv(store, PrimExpr(factor));
       }
@@ -371,7 +394,7 @@ TVM_REGISTER_GLOBAL("tir.LayoutIndexOf").set_body_typed([](Layout layout, std::s
 
 TVM_REGISTER_GLOBAL("tir.LayoutFactorOf")
     .set_body_typed([](Layout layout, std::string axis) -> int {
-      return layout.FactorOf(LayoutAxis::Get(axis));
+      return layout.FactorOf(LayoutAxis::Get(axis))[0];
     });
 
 TVM_REGISTER_GLOBAL("tir.LayoutNdim").set_body_typed([](Layout layout) -> int {

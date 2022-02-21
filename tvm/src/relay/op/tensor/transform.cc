@@ -2547,7 +2547,7 @@ Array<Array<Layout>> StridedSliceInferCorrectLayout(const Attrs& attrs,
           // original layout that contains splitted axes is not supported
           return {{Layout::Undef()}, {Layout::Undef()}};
         }
-        auto factor = new_layout.FactorOf(axis);
+        auto factor = new_layout.FactorOf(axis)[0];
         if (factor == -1) {
           new_begin.push_back(begin[i]);
           new_end.push_back(end[i]);
