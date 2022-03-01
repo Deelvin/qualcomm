@@ -70,7 +70,6 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
         2-D with shape [batch, out_dim]
     """
     assert len(data.shape) == 2, "only support 2-dim dense"
-    #assert len(weight.shape) == 2, "only support 2-dim weights"
     if bias is not None:
         assert len(bias.shape) == 1
     if out_dtype is None:
@@ -155,9 +154,10 @@ def _schedule_dense(cfg, s, output):
     s[data].compute_inline()
     if len(weights.shape) == 2:
         s[weights].compute_inline()
-    #s[weights].compute_inline()
-    _, _, kcc, kcb = s[matmul].op.reduce_axis
+    in_h, in_w, kcc, kcb = s[matmul].op.reduce_axis
     cfg.define_split("tile_k", kcc, num_outputs=2)
+    #if cfg.is_fallback:
+    #    cfg["tile_k"] = SplitEntity([-1, 64] if kcc > 64 else [1, 64])
 
     latest = s.outputs[0].output(0)
 
@@ -177,7 +177,7 @@ def _schedule_dense(cfg, s, output):
 
     s[dummy].bind(b, te.thread_axis("blockIdx.y"))
     s[dummy].bind(bo, te.thread_axis("blockIdx.x"))
-    s[dummy].bind(to, te.thread_axis("threadIdx.x"))
+    s[dummy].bind(to, te.thread_axis("blockIdx.z"))
     s[dummy].bind(vo, te.thread_axis("vthread"))
     s[dummy].reorder(b, bo, vo, to, ob)
     s[dummy].vectorize(ob)
@@ -189,10 +189,14 @@ def _schedule_dense(cfg, s, output):
     #if cfg.is_fallback:
     #    cfg["tile_k"] = SplitEntity([-1, 64] if k > 64 else [1, 64])
     ko, kf = cfg["tile_k"].apply(s, matmul, kcc)
-    s[matmul].reorder(b, o, ko, kf, kcb, ob)
+    s[matmul].reorder(b, o, in_h, in_w, ko, kf, kcb, ob)
     s[matmul].vectorize(ob)
     s[matmul].unroll(kcb)
-    #CF = s.rfactor(matmul, kf)
+    CF = s.rfactor(matmul, ko)
+    ty = s[matmul].op.reduce_axis[0]
+    thread_y = te.thread_axis("threadIdx.y")
+    s[matmul].bind(ty, thread_y)
+    s[CF].compute_at(s[matmul], ty)
 
     s[latest].compute_root()
 
