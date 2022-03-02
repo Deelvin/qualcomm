@@ -34,6 +34,7 @@ file(GLOB src_files
         implementations/dense_textures.cpp
         implementations/cuda_dense.cpp
         implementations/cuda_dense_textures.cpp
+        implementations/dense_alter_op_weights.cpp
 )
 
 add_library( # Sets the name of the library.

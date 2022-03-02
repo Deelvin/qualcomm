@@ -9,6 +9,7 @@
 #include "implementations/dense_textures.h"
 #include "implementations/cuda_dense.h"
 #include "implementations/cuda_dense_textires.h"
+#include "implementations/dense_alter_op_weights.h"
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_deelvin_openclrunner_MainActivity_runOpenCL(
@@ -18,7 +19,7 @@ Java_com_deelvin_openclrunner_MainActivity_runOpenCL(
     //std::string res = measureExecTime(vector_add, env, assetManager);
     //std::string res = measureExecTime(dense_textures, env, assetManager);
     //std::string res = measureExecTime(dense_textures, env, assetManager);
-    std::string res = measureExecTime(cuda_dense_textures, env, assetManager);
+    std::string res = measureExecTime(dense_alter_op_weights, env, assetManager);
     __android_log_print(ANDROID_LOG_DEBUG, "OpenCL Runner", "Exec time: %s", res.c_str());
     return env->NewStringUTF(res.c_str());
 }
