@@ -116,13 +116,12 @@ def dense_comp(cfg, data, weight, bias=None, out_dtype=None, args={}):
     in_h = te.reduce_axis((0, height), name="in_h")
     matmul = te.compute(
         (batch, out_chunk, channel_block),
-        lambda b, oc, ob: te.sum(data[b, in_h, in_w, kcc, kcb] * weight[oc, in_h, in_w, kcc * channel_block + kcb, ob], axis=[in_h, in_w, kcc, kcb]),
+        lambda b, oc, ob: te.sum(data[b, in_h, in_w, kcc, kcb].astype(out_dtype) * weight[oc, in_h, in_w, kcc * channel_block + kcb, ob].astype(out_dtype), axis=[in_h, in_w, kcc, kcb]),
         name="T_dense",
         tag="dense",
         attrs={"layout_free_placeholders": [weight]},
     )
-    dummy_cast = te.compute((batch, out_chunk, channel_block), lambda b,o,cb: matmul[b,o,cb].astype(out_dtype), tag="dummy_cast")
-    return te.compute((batch, out_dim), lambda n,o: dummy_cast[n,o//channel_block,o%channel_block], tag="cast_from_acc" + args["accumulator"][-2:])
+    return te.compute((batch, out_dim), lambda n,o: matmul[n,o//channel_block,o%channel_block].astype(out_dtype), tag="cast_from_acc" + args["accumulator"][-2:])
 
 
 @autotvm.register_topi_schedule("dense.image2d")
@@ -147,17 +146,12 @@ def schedule_dense_impl(cfg, outs, tag):
 
 
 def _schedule_dense(cfg, s, output):
-    dummy = output.op.input_tensors[0]
-    matmul = dummy.op.input_tensors[0]
+    matmul = output.op.input_tensors[0]
     data, weights = s[matmul].op.input_tensors
 
     s[data].compute_inline()
     if len(weights.shape) == 2:
         s[weights].compute_inline()
-    in_h, in_w, kcc, kcb = s[matmul].op.reduce_axis
-    cfg.define_split("tile_k", kcc, num_outputs=2)
-    #if cfg.is_fallback:
-    #    cfg["tile_k"] = SplitEntity([-1, 64] if kcc > 64 else [1, 64])
 
     latest = s.outputs[0].output(0)
 
@@ -169,34 +163,36 @@ def _schedule_dense(cfg, s, output):
         WT = s.cache_read(weights, get_texture_storage(weights.shape), [matmul])
         bind_data_copy(s[WT])
 
-    b, o, ob = s[dummy].op.axis
+    b, o, ob = s[matmul].op.axis
     #cfg.define_split("tile_fc", o, num_outputs=3)
     cfg.define_split("tile_fc", o, num_outputs=3,
                 filter=lambda entity: entity.size[1] <= 16 and entity.size[2] >= 8 and entity.size[2] < 512 )
-    bo, vo, to = cfg["tile_fc"].apply(s, dummy, o)
-
-    s[dummy].bind(b, te.thread_axis("blockIdx.y"))
-    s[dummy].bind(bo, te.thread_axis("blockIdx.x"))
-    s[dummy].bind(to, te.thread_axis("blockIdx.z"))
-    s[dummy].bind(vo, te.thread_axis("vthread"))
-    s[dummy].reorder(b, bo, vo, to, ob)
-    s[dummy].vectorize(ob)
-
-    s[matmul].compute_at(s[dummy], to)
-
-    b, o, ob = s[matmul].op.axis
-
+    bo, vo, to = cfg["tile_fc"].apply(s, matmul, o)
+    in_h, in_w, kcc, kcb = s[matmul].op.reduce_axis
+    cfg.define_split("tile_k", kcc, num_outputs=2)
     #if cfg.is_fallback:
-    #    cfg["tile_k"] = SplitEntity([-1, 64] if k > 64 else [1, 64])
+    #    cfg["tile_k"] = SplitEntity([-1, 64] if kcc > 64 else [1, 64])
     ko, kf = cfg["tile_k"].apply(s, matmul, kcc)
-    s[matmul].reorder(b, o, in_h, in_w, ko, kf, kcb, ob)
+    print("in_h: ", in_h)
+    print("in_w: ", in_w)
+    print("kcc: ", kcc)
+    print("kcb: ", kcb)
+    print("ko: ", ko)
+    print("kf: ", kf)
+    print("len: ", len(s[matmul].op.reduce_axis))
+    s[matmul].reorder(b, bo, vo, to, in_h, in_w, ko, kf, kcb, ob)
+    CF = s.rfactor(matmul, ko)
+    #ty = s[matmul].op.reduce_axis[0]
+    thread_y = te.thread_axis("threadIdx.y")
+
+    s[matmul].bind(b, te.thread_axis("blockIdx.y"))
+    s[matmul].bind(bo, te.thread_axis("blockIdx.x"))
+    s[matmul].bind(to, te.thread_axis("blockIdx.z"))
+    s[matmul].bind(ko, thread_y)
+    s[matmul].bind(vo, te.thread_axis("vthread"))
+    s[CF].compute_at(s[matmul], ko)
     s[matmul].vectorize(ob)
     s[matmul].unroll(kcb)
-    CF = s.rfactor(matmul, ko)
-    ty = s[matmul].op.reduce_axis[0]
-    thread_y = te.thread_axis("threadIdx.y")
-    s[matmul].bind(ty, thread_y)
-    s[CF].compute_at(s[matmul], ty)
 
     s[latest].compute_root()
 
