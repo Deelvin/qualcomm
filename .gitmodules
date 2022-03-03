@@ -13,3 +13,6 @@
 [submodule "OpenCLRunner/app/src/main/cpp/libopencl-stub"]
 	path = OpenCLRunner/app/src/main/cpp/libopencl-stub
 	url = https://github.com/echuraev/libopencl-stub.git
+[submodule "OpenCLCppRunner/libopencl-stub"]
+	path = OpenCLCppRunner/libopencl-stub
+	url = https://github.com/echuraev/libopencl-stub.git

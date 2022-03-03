@@ -3,23 +3,27 @@ project("opencl_cpp_runner")
 
 set(CMAKE_CXX_STANDARD 14)
 
-find_package(OpenCL)
-if (${OpenCL_INCLUDE_DIR})
-include_directories(
-        common/
-        implementations/
-        ${OpenCL_INCLUDE_DIR}
-)
+if (BUILD_FOR_MOBILE)
+    add_subdirectory(libopencl-stub)
+
+    set(OpenCL_INCLUDE_DIRS
+            libopencl-stub/include/
+            libopencl-stub/include/CL/
+        )
+    set(OpenCL_LIBRARIES OpenCL)
 else()
-set(USE_OPENCL /home/amalyshe/sandboxes/tools/AdrenoOpenCLSDK/opencl-sdk-1.3)
-include(FindOpenCL.cmake)
-find_opencl(${USE_OPENCL})
+    message(WARNING "If you want to build this project for Android, pass -DBUILD_FOR_MOBILE=ON option to CMake")
+    find_package(OpenCL)
+    if(NOT ${OpenCL_FOUND})
+        message(FATAL_ERROR "Cannot find OpenCL")
+    endif()
+endif()
+
 include_directories(
         common/
         implementations/
         ${OpenCL_INCLUDE_DIRS}
 )
-endif()
 
 file(GLOB src_files
         main.cpp

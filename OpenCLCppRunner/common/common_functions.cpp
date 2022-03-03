@@ -7,8 +7,11 @@
 std::string readKernel(const std::string& name) {
     std::ifstream file("../kernels/" + name);
     if (!file.is_open()) {
-        std::cerr << "Error! Cannot read kernel: " << name << std::endl;
-        return "";
+        file.open(name);
+        if (!file.is_open()) {
+            std::cerr << "Error! Cannot read kernel: " << name << std::endl;
+            return "";
+        }
     }
     std::ostringstream ss;
     ss << file.rdbuf();

@@ -1,10 +1,10 @@
 #include <iostream>
 
-#include "implementations/simple_mad.h"
+#include "implementations/conv2d_vgg16.h"
 
 int main()
 {
-    std::string res = measureExecTime(simple_mad, 10);
+    std::string res = measureExecTime(conv2d_vgg16, 10);
     std::cout << "OpenCLRunner, Exec time: " << res << std::endl;
     return 0;
 }
