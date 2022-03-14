@@ -36,10 +36,10 @@ def getDiv(value, start):
 
 
 def split_to_chunks(trip_count, block):
-    tail = trip_count % 4
-    chunks = trip_count // 4
+    tail = trip_count % block
+    chunks = trip_count // block
     if tail == 0:
-        tail = 4
+        tail = block
     else:
         chunks += 1
     return chunks, block, tail
