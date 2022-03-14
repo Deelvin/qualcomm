@@ -37,6 +37,21 @@ def conv2d_strategy_adreno(attrs, inputs, out_type, target):
     if groups == 1:
         if ((data_layout == "NCHW" and kernel_layout == "OIHW") or
            (data_layout == "NCHW4c" and kernel_layout == "OIHW4o")):
+            if len(kernel.shape) == 4:
+                _, _, kh, kw = get_const_tuple(kernel.shape)
+            else:
+                _, _, kh, kw, _ = get_const_tuple(kernel.shape)
+            if (
+                (2 < kh < 8 and 2 < kw < 8 and kh == kw)
+                and (stride_h == 1 and stride_w == 1)
+                and (dilation_h == 1 and dilation_w == 1)
+            ):
+                strategy.add_implementation(
+                    wrap_compute_conv2d(topi.adreno.conv2d_nchw_winograd),
+                    wrap_topi_schedule(topi.adreno.schedule_conv2d_nchw_winograd),
+                    name="conv2d_nchw_winograd.image2d",
+                    plevel=5,
+                )
             if out_type.dtype == "float16":
                 strategy.add_implementation(
                     wrap_compute_conv2d(topi.adreno.conv2d_nchwc),
