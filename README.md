@@ -16,9 +16,9 @@ milliseconds) which were achieved on the [Realme GT 5G](https://www.gsmarena.com
 
 |                      | mace_mobilenetv1 | mace_resnet50_v2 | mace_inceptionv3 | vgg16  | mace_deeplabv3 | mace_yolov3 |
 |----------------------|------------------|------------------|------------------|--------|----------------|-------------|
-| TVM textures FP16    |              4,8 |            27,46 |            44,45 |  78,96 |         103,99 |      175,09 |
-| TVM textures FP16a32 |             5,42 |            28,51 |            44,31 |  96,64 |         110,32 |      242,34 |
-| TVM textures FP32    |             7,66 |            40,56 |            69,87 | 131,99 |         154,06 |      306,27 |
+| TVM textures FP16    |              4,8 |            27,46 |            44,45 |  59,53 |         103,99 |      175,09 |
+| TVM textures FP16a32 |             5,42 |            28,51 |            44,31 |  65,43 |         110,32 |      242,34 |
+| TVM textures FP32    |             7,66 |            40,56 |            69,87 | 101,20 |         154,06 |      306,27 |
 
 The tuning log files are located in [logs/mace_models/](logs/mace_models/). You
 can use the `evaluate.py` script for reproducing these numbers. Copy the name of
