@@ -84,15 +84,27 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         dilation_h, dilation_w = dilation
     HSTR, WSTR = (strides, strides) if isinstance(strides, int) else strides
 
-    data_len = len(data.shape)
-    kernel_len = len(kernel.shape)
     convert_from4d = False
     if len(data.shape) == 4:
-        N, _, H, W = get_const_tuple(data.shape)
-        CO, CI, KH, KW = get_const_tuple(kernel.shape)
-    else:
-        N, _, H, W, _ = get_const_tuple(data.shape)
-        CO, CI, KH, KW, COB = get_const_tuple(kernel.shape)
+        N, DCI, H, W = get_const_tuple(data.shape)
+        out_channels, CI, KH, KW = get_const_tuple(kernel.shape)
+        assert DCI == CI
+
+        in_channel_chunks, in_channel_block, in_channel_tail = split_to_chunks(CI, 4)
+        out_channel_chunks, out_channel_block, out_channel_tail = split_to_chunks(out_channels, 4)
+        if autotvm.GLOBAL_SCOPE.in_tuning == True:
+            dshape = (N, in_channel_chunks, H, W, in_channel_block)
+            data = tvm.te.placeholder(dshape, data.dtype, name="data_placeholder")
+            kshape = (out_channel_chunks, CI, KH, KW, out_channel_block)
+            kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
+        else:
+            convert_from4d = True
+            data = pack_input(data, "NCHW", N, in_channel_chunks, in_channel_block, in_channel_tail, H, W)
+            kernel = pack_filter(kernel, "OIHW", out_channel_chunks, out_channel_block, out_channel_tail,
+                                 CI, in_channel_chunks, in_channel_block, in_channel_tail, KH, KW)
+    N, DCI, H, W, CB = get_const_tuple(data.shape)
+    CO, CI, KH, KW, COB = get_const_tuple(kernel.shape)
+    assert DCI * CB == CI and CB == COB
 
     if isinstance(N, tvm.tir.Any):
         N = tvm.te.size_var("n")
@@ -107,10 +119,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     assert HSTR == 1 and WSTR == 1 and KH == KW
 
     pt, pl, pb, pr = nn.get_pad_tuple(padding, (KH, KW))
-    if data_len == 4:
-        data_pad = nn.pad(data, (0, 0, pt, pl), (0, 0, pb, pr), name="data_pad")
-    else:
-        data_pad = nn.pad(data, (0, 0, pt, pl, 0), (0, 0, pb, pr, 0), name="data_pad")
+    data_pad = nn.pad(data, (0, 0, pt, pl, 0), (0, 0, pb, pr, 0), name="data_pad")
 
     r = KW
     m = tile_size
@@ -125,122 +134,68 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     # transform kernel
     r_kh = te.reduce_axis((0, KH), name="r_kh")
     r_kw = te.reduce_axis((0, KW), name="r_kw")
-    if kernel_len == 4:
-        kernel_pack = te.compute(
-            (alpha, alpha, CI, CO),
-            lambda eps, nu, ci, co: te.sum(
-                kernel[co][ci][r_kh][r_kw].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
-            ),
-            name="kernel_pack",
-        )
-    else:
-        kernel_pack = te.compute(
-            (alpha, alpha, CI, CO, COB),
-            lambda eps, nu, ci, co, cob: te.sum(
-                kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
-            ),
-            name="kernel_pack",
-        )
+    kernel_pack = te.compute(
+        (alpha, alpha, CI, CO, COB),
+        lambda eps, nu, ci, co, cob: te.sum(
+            kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+        ),
+        name="kernel_pack",
+    )
 
     idxdiv = tvm.tir.indexdiv
     idxmod = tvm.tir.indexmod
-    if data_len == 4:
-        N, CI, H, W = get_const_tuple(data.shape)
-        # pack input tile
-        input_tile = te.compute(
-            (CI, P, alpha, alpha),
-            lambda c, p, eps, nu: data_pad[idxdiv(p, (nH * nW))][c][
-                idxmod(idxdiv(p, nW), nH) * m + eps
-            ][idxmod(p, nW) * m + nu].astype(args["accumulator"]),
-            name="d",
-        )
+    N, CI, H, W, CB = get_const_tuple(data.shape)
+    # pack input tile
+    input_tile = te.compute(
+        (CI, P, alpha, alpha, CB),
+        lambda c, p, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][
+            idxmod(idxdiv(p, nW), nH) * m + eps
+        ][idxmod(p, nW) * m + nu][cb].astype(args["accumulator"]),
+        name="d",
+    )
 
-        # transform data
-        r_a = te.reduce_axis((0, alpha), "r_a")
-        r_b = te.reduce_axis((0, alpha), "r_a")
-        data_pack = te.compute(
-            (alpha, alpha, CI, P),
-            lambda eps, nu, ci, p: te.sum(
-                input_tile[ci][p][r_a][r_b] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
-            ),
-            name="data_pack",
-        )
+    # transform data
+    r_a = te.reduce_axis((0, alpha), "r_a")
+    r_b = te.reduce_axis((0, alpha), "r_a")
+    data_pack = te.compute(
+        (alpha, alpha, CI, P, CB),
+        lambda eps, nu, ci, p, cb: te.sum(
+            input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+        ),
+        name="data_pack",
+    )
 
-        # do batch gemm
-        ci = te.reduce_axis((0, CI), name="ci")
-        bgemm = te.compute(
-            (alpha, alpha, CO, P),
-            lambda eps, nu, co, p: te.sum(
-                kernel_pack[eps][nu][ci][co] * data_pack[eps][nu][ci][p], axis=[ci]
-            ),
-            name="bgemm",
-        )
+    # do batch gemm
+    ci = te.reduce_axis((0, CI), name="ci")
+    cb = te.reduce_axis((0, CB), name="cb")
+    bgemm = te.compute(
+        (alpha, alpha, CO, P, COB),
+        lambda eps, nu, co, p, cob: te.sum(
+            kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
+        ),
+        name="bgemm",
+    )
 
-        # inverse transform
-        r_a = te.reduce_axis((0, alpha), "r_a")
-        r_b = te.reduce_axis((0, alpha), "r_a")
-        inverse = te.compute(
-            (CO, P, m, m),
-            lambda co, p, vh, vw: te.sum(
-                bgemm[r_a][r_b][co][p] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
-            ),
-            name="inverse",
-        )
+    # inverse transform
+    r_a = te.reduce_axis((0, alpha), "r_a")
+    r_b = te.reduce_axis((0, alpha), "r_a")
+    inverse = te.compute(
+        (CO, P, m, m, COB),
+        lambda co, p, vh, vw, cob: te.sum(
+            bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
+        ),
+        name="inverse",
+    )
 
-        # output
+    # output
+    if convert_from4d and autotvm.GLOBAL_SCOPE.in_tuning == False:
         output = te.compute(
-            (N, CO, H, W),
-            lambda n, co, h, w: inverse[
-                co, n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m), idxmod(h, m), idxmod(w, m)
-            ].astype(out_dtype),
+            (N, out_channels, H, W),
+            lambda n, c, h, w: inverse[c // CO][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CO].astype(out_dtype),
             name="output",
             tag="cast_from_acc" + args["accumulator"][-2:],
         )
     else:
-        N, CI, H, W, CB = get_const_tuple(data.shape)
-        # pack input tile
-        input_tile = te.compute(
-            (CI, P, alpha, alpha, CB),
-            lambda c, p, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][
-                idxmod(idxdiv(p, nW), nH) * m + eps
-            ][idxmod(p, nW) * m + nu][cb].astype(args["accumulator"]),
-            name="d",
-        )
-
-        # transform data
-        r_a = te.reduce_axis((0, alpha), "r_a")
-        r_b = te.reduce_axis((0, alpha), "r_a")
-        data_pack = te.compute(
-            (alpha, alpha, CI, P, CB),
-            lambda eps, nu, ci, p, cb: te.sum(
-                input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
-            ),
-            name="data_pack",
-        )
-
-        # do batch gemm
-        ci = te.reduce_axis((0, CI), name="ci")
-        cb = te.reduce_axis((0, CB), name="cb")
-        bgemm = te.compute(
-            (alpha, alpha, CO, P, COB),
-            lambda eps, nu, co, p, cob: te.sum(
-                kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
-            ),
-            name="bgemm",
-        )
-
-        # inverse transform
-        r_a = te.reduce_axis((0, alpha), "r_a")
-        r_b = te.reduce_axis((0, alpha), "r_a")
-        inverse = te.compute(
-            (CO, P, m, m, COB),
-            lambda co, p, vh, vw, cob: te.sum(
-                bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
-            ),
-            name="inverse",
-        )
-
-        # output
         output = te.compute(
             (N, CO, H, W, COB),
             lambda n, co, h, w, cob: inverse[co][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][cob].astype(out_dtype),
@@ -249,10 +204,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         )
 
     if isinstance(N, int):
-        if data_len == 4:
-            cfg.add_flop(2 * N * CO * H * W * CI * KH * KW)
-        else:
-            cfg.add_flop(2 * N * CO * COB * H * W * CI * CB * KH * KW)
+        cfg.add_flop(2 * N * CO * COB * H * W * CI * CB * KH * KW)
 
     return output
 
@@ -270,27 +222,17 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[B].compute_inline()
 
     data_l = s.cache_write(data_pack, "local")
-    len_axis = len(s[data_l].op.axis)
-    if len_axis == 4:
-        eps, nu, c, p = s[data_l].op.axis
-    else:
-        eps, nu, c, p, _ = s[data_l].op.axis
+    eps, nu, c, p, _ = s[data_l].op.axis
     r_a, r_b = s[data_l].op.reduce_axis
     for axis in [eps, nu, r_a, r_b]:
         s[data_l].unroll(axis)
 
-    if len_axis == 4:
-        eps, nu, c, p = s[data_pack].op.axis
-    else:
-        eps, nu, c, p, cb = s[data_pack].op.axis
+    eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
     fused = s[data_pack].fuse(c, p)
     bb, tt = s[data_pack].split(fused, 128)
-    if len_axis == 4:
-        s[data_pack].reorder(bb, tt, pi, eps, nu)
-    else:
-        s[data_pack].reorder(bb, tt, pi, eps, nu, cb)
-        s[data_pack].vectorize(cb)
+    s[data_pack].reorder(bb, tt, pi, eps, nu, cb)
+    s[data_pack].vectorize(cb)
     s[data_pack].bind(bb, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tt, te.thread_axis("threadIdx.x"))
 
@@ -300,10 +242,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # transform kernel
     kernel, G = s[kernel_pack].op.input_tensors
-    if len_axis == 4:
-        eps, nu, ci, co = s[kernel_pack].op.axis
-    else:
-        eps, nu, ci, co, cob = s[kernel_pack].op.axis
+    eps, nu, ci, co, cob = s[kernel_pack].op.axis
     if autotvm.GLOBAL_SCOPE.in_tuning:
         # skip this part during tuning to make recrods accurate
         # this part will be pre-computed during pre-compute optimization pass
@@ -317,11 +256,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
         fused = s[kernel_pack].fuse(ci, co)
         bb, tt = s[kernel_pack].split(fused, 128)
-        if len_axis == 4:
-            s[kernel_pack].reorder(bb, tt, eps, nu, r_a, r_b)
-        else:
-            s[kernel_pack].reorder(bb, tt, eps, nu, r_a, r_b, cob)
-            s[kernel_pack].vectorize(cob)
+        s[kernel_pack].reorder(bb, tt, eps, nu, r_a, r_b, cob)
+        s[kernel_pack].vectorize(cob)
         s[kernel_pack].bind(bb, te.thread_axis("blockIdx.x"))
         s[kernel_pack].bind(tt, te.thread_axis("threadIdx.x"))
 
@@ -329,10 +265,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         s[kernel].compute_inline()
 
     ##### space definition begin #####
-    if len_axis == 4:
-        b1, b2, y, x = s[bgemm].op.axis
-    else:
-        b1, b2, y, x, cb = s[bgemm].op.axis
+    b1, b2, y, x, cb = s[bgemm].op.axis
     rcc = s[bgemm].op.reduce_axis[0]
     alpha = get_const_int(b1.dom.extent)
 
@@ -374,29 +307,18 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[C].bind(tz, te.thread_axis("threadIdx.z"))
     s[C].bind(ty, te.thread_axis("threadIdx.y"))
     s[C].bind(tx, te.thread_axis("threadIdx.x"))
-    if len_axis == 4:
-        s[C].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi)
-    else:
-        s[C].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi, cb)
-        s[C].vectorize(cb)
+    s[C].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi, cb)
+    s[C].vectorize(cb)
 
     # tile reduction axes
     s[OL].compute_at(s[C], tx)
-    if len_axis == 4:
-        b1, b2, y, x = s[OL].op.axis
-        (rcc,) = s[OL].op.reduce_axis
-    else:
-        b1, b2, y, x, cb = s[OL].op.axis
-        (rcc, rcb) = s[OL].op.reduce_axis
+    b1, b2, y, x, cb = s[OL].op.axis
+    (rcc, rcb) = s[OL].op.reduce_axis
     b = s[OL].fuse(b1, b2)
     #rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
-    if len_axis == 4:
-        #s[OL].reorder(rco, rci, b, y, x)
-        s[OL].reorder(rcc, b, y, x)
-    else:
-        #s[OL].reorder(rco, rci, rb, b, y, x, cb)
-        s[OL].reorder(rcc, rcb, b, y, x, cb)
-        s[OL].vectorize(cb)
+    #s[OL].reorder(rco, rci, rb, b, y, x, cb)
+    s[OL].reorder(rcc, rcb, b, y, x, cb)
+    s[OL].vectorize(cb)
 
     s[AA].compute_at(s[OL], rcc)
     s[BB].compute_at(s[OL], rcc)
@@ -423,10 +345,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         output = s.outputs[0]
 
     m = alpha - 3 + 1
-    if len(s[output].op.axis) == 4:
-        n, co, h, w = s[output].op.axis
-    else:
-        n, co, h, w, cb = s[output].op.axis
+    n, co, h, w, cb = s[output].op.axis
     ho, wo, hi, wi = s[output].tile(h, w, m, m)
     inverse_scope, n = s[output].split(n, nparts=1)
 
@@ -440,15 +359,11 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         s[OL].compute_at(s[output], tt)
 
     s[A].compute_inline()
-    if len(s[inverse].op.axis) == 4:
-        co, p, vh, vw = s[inverse].op.axis
-    else:
-        co, p, vh, vw, cb = s[inverse].op.axis
+    co, p, vh, vw, cb = s[inverse].op.axis
     r_a, r_b = s[inverse].op.reduce_axis
     for axis in [vh, vw, r_a, r_b]:
         s[inverse].unroll(axis)
-    if len(s[inverse].op.axis) != 4:
-        s[inverse].vectorize(cb)
+    s[inverse].vectorize(cb)
     s[inverse].compute_at(s[output], tt)
 
     return s
