@@ -78,9 +78,16 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     """Compute declaration for winograd"""
     tile_size = _infer_tile_size(data)
 
+    if isinstance(dilation, int):
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+    HSTR, WSTR = (strides, strides) if isinstance(strides, int) else strides
+
     data_len = len(data.shape)
     kernel_len = len(kernel.shape)
-    if data_len == 4:
+    convert_from4d = False
+    if len(data.shape) == 4:
         N, _, H, W = get_const_tuple(data.shape)
         CO, CI, KH, KW = get_const_tuple(kernel.shape)
     else:
@@ -92,15 +99,9 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     if not isinstance(H, int) or not isinstance(W, int):
         raise RuntimeError(
-            "cuda winograd conv2d doesn't support dynamic input\
+            "adreno winograd conv2d doesn't support dynamic input\
                            height or width."
         )
-
-    if isinstance(dilation, int):
-        dilation_h = dilation_w = dilation
-    else:
-        dilation_h, dilation_w = dilation
-    HSTR, WSTR = (strides, strides) if isinstance(strides, int) else strides
 
     alpha = KW + tile_size - 1
     assert HSTR == 1 and WSTR == 1 and KH == KW
@@ -113,7 +114,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     r = KW
     m = tile_size
-    A, B, G = winograd_transform_matrices(m, r, out_dtype)
+    A, B, G = winograd_transform_matrices(m, r, args["accumulator"])
 
     H = (H + pt + pb - KH) // HSTR + 1
     W = (W + pl + pr - KW) // WSTR + 1
@@ -128,7 +129,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         kernel_pack = te.compute(
             (alpha, alpha, CI, CO),
             lambda eps, nu, ci, co: te.sum(
-                (kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw]).astype(args["accumulator"]), axis=[r_kh, r_kw]
+                kernel[co][ci][r_kh][r_kw].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
             ),
             name="kernel_pack",
         )
@@ -136,7 +137,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         kernel_pack = te.compute(
             (alpha, alpha, CI, CO, COB),
             lambda eps, nu, ci, co, cob: te.sum(
-                (kernel[co][ci][r_kh][r_kw][cob] * G[eps][r_kh] * G[nu][r_kw]).astype(args["accumulator"]), axis=[r_kh, r_kw]
+                kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
             ),
             name="kernel_pack",
         )
@@ -160,7 +161,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         data_pack = te.compute(
             (alpha, alpha, CI, P),
             lambda eps, nu, ci, p: te.sum(
-                input_tile[ci][p][r_a][r_b] * (B[r_a][eps] * B[r_b][nu]).astype(args["accumulator"]), axis=[r_a, r_b]
+                input_tile[ci][p][r_a][r_b] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
             ),
             name="data_pack",
         )
@@ -181,7 +182,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         inverse = te.compute(
             (CO, P, m, m),
             lambda co, p, vh, vw: te.sum(
-                bgemm[r_a][r_b][co][p] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
+                bgemm[r_a][r_b][co][p] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
             ),
             name="inverse",
         )
@@ -212,7 +213,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         data_pack = te.compute(
             (alpha, alpha, CI, P, CB),
             lambda eps, nu, ci, p, cb: te.sum(
-                input_tile[ci][p][r_a][r_b][cb] * (B[r_a][eps] * B[r_b][nu]).astype(args["accumulator"]), axis=[r_a, r_b]
+                input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
             ),
             name="data_pack",
         )
@@ -234,7 +235,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         inverse = te.compute(
             (CO, P, m, m, COB),
             lambda co, p, vh, vw, cob: te.sum(
-                bgemm[r_a][r_b][co][p][cob] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
+                bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
             ),
             name="inverse",
         )
