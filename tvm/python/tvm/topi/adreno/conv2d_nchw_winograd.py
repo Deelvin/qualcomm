@@ -25,7 +25,6 @@ from tvm import autotvm
 from tvm.topi import nn
 from tvm.topi.utils import get_const_int, get_const_tuple, traverse_inline
 from ..nn.winograd_util import winograd_transform_matrices
-from ..nn.conv2d import conv2d_winograd_nhwc, _conv2d_winograd_nhwc_impl
 from .utils import split_to_chunks, pack_input, pack_filter, expand_spatial_dimensions, add_pad, bind_data_copy, get_texture_storage
 
 
@@ -42,9 +41,40 @@ def _infer_tile_size(data):
         return 4
     return 2
 
-# Tile. For NCHW4c H or W is not block and there is a gaps between items. Maybe I should vectorize by tile?
-# Try to generate this code and understand
-def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out_dtype, pre_computed):
+@autotvm.register_topi_compute("conv2d_nchw_winograd.image2d")
+def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtype):
+    args={"shared" : False, "accumulator" : "float16"}
+    return conv2d_nchw_winograd_comp(
+        cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
+    )
+
+@autotvm.register_topi_compute("conv2d_nchw_winograd_acc32.image2d")
+def conv2d_nchw_winograd_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
+    args={"shared" : False, "accumulator" : "float32"}
+    return conv2d_nchw_winograd_comp(
+        cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
+    )
+
+@autotvm.register_topi_schedule("conv2d_nchw_winograd.image2d")
+def schedule_conv2d_nchw_winograd(cfg, outs):
+    return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16")
+
+@autotvm.register_topi_schedule("conv2d_nchw_winograd_acc32.image2d")
+def schedule_conv2d_nchw_winograd_acc32(cfg, outs):
+    return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32")
+
+def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag):
+    outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
+    s = te.create_schedule([x.op for x in outs])
+
+    def _callback(op):
+        if op.tag == tag:
+            schedule_conv2d_winograd(cfg, s, op.output(0), pre_computed=False)
+
+    traverse_inline(s, outs[0].op, _callback)
+    return s
+
+def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out_dtype, args, pre_computed):
     """Compute declaration for winograd"""
     tile_size = _infer_tile_size(data)
 
@@ -98,7 +128,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         kernel_pack = te.compute(
             (alpha, alpha, CI, CO),
             lambda eps, nu, ci, co: te.sum(
-                kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+                (kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw]).astype(args["accumulator"]), axis=[r_kh, r_kw]
             ),
             name="kernel_pack",
         )
@@ -106,7 +136,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         kernel_pack = te.compute(
             (alpha, alpha, CI, CO, COB),
             lambda eps, nu, ci, co, cob: te.sum(
-                kernel[co][ci][r_kh][r_kw][cob] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+                (kernel[co][ci][r_kh][r_kw][cob] * G[eps][r_kh] * G[nu][r_kw]).astype(args["accumulator"]), axis=[r_kh, r_kw]
             ),
             name="kernel_pack",
         )
@@ -120,7 +150,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
             (CI, P, alpha, alpha),
             lambda c, p, eps, nu: data_pad[idxdiv(p, (nH * nW))][c][
                 idxmod(idxdiv(p, nW), nH) * m + eps
-            ][idxmod(p, nW) * m + nu],
+            ][idxmod(p, nW) * m + nu].astype(args["accumulator"]),
             name="d",
         )
 
@@ -130,7 +160,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         data_pack = te.compute(
             (alpha, alpha, CI, P),
             lambda eps, nu, ci, p: te.sum(
-                input_tile[ci][p][r_a][r_b] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+                input_tile[ci][p][r_a][r_b] * (B[r_a][eps] * B[r_b][nu]).astype(args["accumulator"]), axis=[r_a, r_b]
             ),
             name="data_pack",
         )
@@ -151,7 +181,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         inverse = te.compute(
             (CO, P, m, m),
             lambda co, p, vh, vw: te.sum(
-                bgemm[r_a][r_b][co][p] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
+                bgemm[r_a][r_b][co][p] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
             ),
             name="inverse",
         )
@@ -161,9 +191,9 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
             (N, CO, H, W),
             lambda n, co, h, w: inverse[
                 co, n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m), idxmod(h, m), idxmod(w, m)
-            ],
+            ].astype(out_dtype),
             name="output",
-            tag="conv2d_nchw_winograd",
+            tag="cast_from_acc" + args["accumulator"][-2:],
         )
     else:
         N, CI, H, W, CB = get_const_tuple(data.shape)
@@ -172,7 +202,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
             (CI, P, alpha, alpha, CB),
             lambda c, p, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][
                 idxmod(idxdiv(p, nW), nH) * m + eps
-            ][idxmod(p, nW) * m + nu][cb],
+            ][idxmod(p, nW) * m + nu][cb].astype(args["accumulator"]),
             name="d",
         )
 
@@ -182,7 +212,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         data_pack = te.compute(
             (alpha, alpha, CI, P, CB),
             lambda eps, nu, ci, p, cb: te.sum(
-                input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+                input_tile[ci][p][r_a][r_b][cb] * (B[r_a][eps] * B[r_b][nu]).astype(args["accumulator"]), axis=[r_a, r_b]
             ),
             name="data_pack",
         )
@@ -204,7 +234,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         inverse = te.compute(
             (CO, P, m, m, COB),
             lambda co, p, vh, vw, cob: te.sum(
-                bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
+                bgemm[r_a][r_b][co][p][cob] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
             ),
             name="inverse",
         )
@@ -212,9 +242,9 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         # output
         output = te.compute(
             (N, CO, H, W, COB),
-            lambda n, co, h, w, cob: inverse[co][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][cob],
+            lambda n, co, h, w, cob: inverse[co][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][cob].astype(out_dtype),
             name="output",
-            tag="conv2d_nchw_winograd",
+            tag="cast_from_acc" + args["accumulator"][-2:],
         )
 
     if isinstance(N, int):
@@ -226,7 +256,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     return output
 
 
-def schedule_conv2d_nchw_winograd_impl(cfg, s, output, pre_computed):
+def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     """Schedule winograd template"""
     # get stages
     inverse = s[output].op.input_tensors[0]
@@ -420,23 +450,4 @@ def schedule_conv2d_nchw_winograd_impl(cfg, s, output, pre_computed):
         s[inverse].vectorize(cb)
     s[inverse].compute_at(s[output], tt)
 
-    return s
-
-
-@autotvm.register_topi_compute("conv2d_nchw_winograd.image2d")
-def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtype):
-    return conv2d_nchw_winograd_comp(
-        cfg, data, kernel, strides, padding, dilation, out_dtype, pre_computed=False
-    )
-
-
-@autotvm.register_topi_schedule("conv2d_nchw_winograd.image2d")
-def schedule_conv2d_nchw_winograd(cfg, outs):
-    s = te.create_schedule([x.op for x in outs])
-
-    def _callback(op):
-        if "conv2d_nchw_winograd" in op.tag:
-            schedule_conv2d_nchw_winograd_impl(cfg, s, op.output(0), pre_computed=False)
-
-    traverse_inline(s, outs[0].op, _callback)
     return s
