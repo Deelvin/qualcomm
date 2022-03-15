@@ -189,6 +189,16 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     # output
     if convert_from4d and autotvm.GLOBAL_SCOPE.in_tuning == False:
+        #dummy_cast = te.compute(
+        #    (N, out_channel_chunks, H, W, out_channel_block),
+        #    lambda n, co, h, w, cob: inverse[co][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][cob].astype(out_dtype),
+        #    tag="dummy_cast")
+        #output = te.compute(
+        #    (N, out_channels, H, W),
+        #    lambda n, c, h, w: dummy_cast[c // CO][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CO],
+        #    name="output",
+        #    tag="cast_from_acc" + args["accumulator"][-2:],
+        #)
         output = te.compute(
             (N, out_channels, H, W),
             lambda n, c, h, w: inverse[c // CO][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CO].astype(out_dtype),
@@ -212,6 +222,13 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     """Schedule winograd template"""
     # get stages
+    ##latest = s.outputs[0].output(0)
+    ##if len(latest.op.axis) == 4:
+    ##  latest_blocked = dummy = output.op.input_tensors[0]
+    ##  inverse = dummy.op.input_tensors[0]
+    ##else:
+    ##  inverse = output.op.input_tensors[0]
+    ##  latest_blocked = latest
     inverse = s[output].op.input_tensors[0]
     bgemm, A = s[inverse].op.input_tensors
     kernel_pack, data_pack = s[bgemm].op.input_tensors
@@ -220,6 +237,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # data transform
     s[B].compute_inline()
+    s[A].compute_inline()
 
     data_l = s.cache_write(data_pack, "local")
     eps, nu, c, p, _ = s[data_l].op.axis
@@ -238,7 +256,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     s[data_l].compute_at(s[data_pack], pi)
     s[input_tile].compute_at(s[data_pack], pi)
-    s[pad_data].compute_inline()
 
     # transform kernel
     kernel, G = s[kernel_pack].op.input_tensors
@@ -261,8 +278,14 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         s[kernel_pack].bind(bb, te.thread_axis("blockIdx.x"))
         s[kernel_pack].bind(tt, te.thread_axis("threadIdx.x"))
 
-    if isinstance(kernel.op, tvm.te.ComputeOp) and "dilate" in kernel.op.tag:
-        s[kernel].compute_inline()
+    if isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag:
+        # manage scheduling of datacopy
+        pack_data = pad_data.op.input_tensors[0]
+        bind_data_copy(s[pack_data])
+        bind_data_copy(s[kernel])
+    elif isinstance(kernel.op, tvm.te.ComputeOp) and "dilate" in kernel.op.tag:
+            s[kernel].compute_inline()
+    s[pad_data].compute_inline()
 
     ##### space definition begin #####
     b1, b2, y, x, cb = s[bgemm].op.axis
@@ -345,7 +368,10 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         output = s.outputs[0]
 
     m = alpha - 3 + 1
-    n, co, h, w, cb = s[output].op.axis
+    if len(s[output].op.axis) == 4:
+        n, co, h, w = s[output].op.axis
+    else:
+        n, co, h, w, _ = s[output].op.axis
     ho, wo, hi, wi = s[output].tile(h, w, m, m)
     inverse_scope, n = s[output].split(n, nparts=1)
 
@@ -358,7 +384,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     if OL is not None:
         s[OL].compute_at(s[output], tt)
 
-    s[A].compute_inline()
     co, p, vh, vw, cb = s[inverse].op.axis
     r_a, r_b = s[inverse].op.reduce_axis
     for axis in [vh, vw, r_a, r_b]:
