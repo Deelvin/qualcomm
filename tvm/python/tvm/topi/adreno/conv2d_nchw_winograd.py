@@ -308,11 +308,13 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # batch gemm
     C = bgemm
-    A0, B0 = kernel_pack, data_pack
-
     OL = s.cache_write(C, "local")
-    AA = s.cache_read(A0, "shared", [OL])
-    BB = s.cache_read(B0, "shared", [OL])
+    AA = s.cache_read(data_pack, get_texture_storage(data_pack.shape), [OL])
+    bind_data_copy(s[AA])
+    if (autotvm.GLOBAL_SCOPE.in_tuning or
+        isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag):
+        BB = s.cache_read(kernel_pack, get_texture_storage(kernel_pack.shape), [OL])
+        bind_data_copy(s[BB])
 
     b = s[bgemm].fuse(b1, b2)
 
@@ -341,19 +343,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
     s[OL].reorder(rco, rci, rcb, b, y, x, cb)
     s[OL].vectorize(cb)
-
-    s[AA].compute_at(s[OL], rco)
-    s[BB].compute_at(s[OL], rco)
-
-    # cooperative fetching
-    for load in [AA, BB]:
-        fused = s[load].fuse(*list(s[load].op.axis))
-        fused, tx = s[load].split(fused, cfg["tile_x"].size[2])
-        fused, ty = s[load].split(fused, cfg["tile_y"].size[2])
-        fused, tz = s[load].split(fused, cfg["tile_b"].size[2])
-        s[load].bind(tz, te.thread_axis("threadIdx.z"))
-        s[load].bind(ty, te.thread_axis("threadIdx.y"))
-        s[load].bind(tx, te.thread_axis("threadIdx.x"))
 
     s[C].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
     s[C].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
