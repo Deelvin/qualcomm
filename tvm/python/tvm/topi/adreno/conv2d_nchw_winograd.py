@@ -195,13 +195,13 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         #    tag="dummy_cast")
         #output = te.compute(
         #    (N, out_channels, H, W),
-        #    lambda n, c, h, w: dummy_cast[c // CO][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CO],
+        #    lambda n, c, h, w: dummy_cast[c // CB][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CB],
         #    name="output",
         #    tag="cast_from_acc" + args["accumulator"][-2:],
         #)
         output = te.compute(
             (N, out_channels, H, W),
-            lambda n, c, h, w: inverse[c // CO][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CO].astype(out_dtype),
+            lambda n, c, h, w: inverse[c // CB][n * nH * nW + idxdiv(h, m) * nW + idxdiv(w, m)][idxmod(h, m)][idxmod(w, m)][c % CB].astype(out_dtype),
             name="output",
             tag="cast_from_acc" + args["accumulator"][-2:],
         )
@@ -284,7 +284,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         bind_data_copy(s[pack_data])
         bind_data_copy(s[kernel])
     elif isinstance(kernel.op, tvm.te.ComputeOp) and "dilate" in kernel.op.tag:
-            s[kernel].compute_inline()
+        s[kernel].compute_inline()
     s[pad_data].compute_inline()
 
     ##### space definition begin #####
@@ -338,13 +338,12 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     b1, b2, y, x, cb = s[OL].op.axis
     (rcc, rcb) = s[OL].op.reduce_axis
     b = s[OL].fuse(b1, b2)
-    #rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
-    #s[OL].reorder(rco, rci, rb, b, y, x, cb)
-    s[OL].reorder(rcc, rcb, b, y, x, cb)
+    rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
+    s[OL].reorder(rco, rci, rcb, b, y, x, cb)
     s[OL].vectorize(cb)
 
-    s[AA].compute_at(s[OL], rcc)
-    s[BB].compute_at(s[OL], rcc)
+    s[AA].compute_at(s[OL], rco)
+    s[BB].compute_at(s[OL], rco)
 
     # cooperative fetching
     for load in [AA, BB]:
