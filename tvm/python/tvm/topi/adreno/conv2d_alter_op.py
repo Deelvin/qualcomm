@@ -95,13 +95,39 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
             logger.warning("Does not support weight pre-transform for dilated convolution.")
             return None
 
+        print("data_layout: ", data_layout)
+        print("kernel_layout: ", kernel_layout)
+        tile_size = _infer_tile_size(tinfos[0])
+        if len(data_tensor.shape) == 5:
+            assert data_layout == "NCHW4c" and kernel_layout == "OIHW4o"
+            N, CI, H, W, CB = get_const_tuple(data_tensor.shape)
+            CO, _, KH, KW, COB = get_const_tuple(kernel_tensor.shape)
+            weight = relay.layout_transform(inputs[1], "OIHW4o", "OIHW")
+            weight = relay.nn.contrib_conv2d_winograd_weight_transform(weight, tile_size=tile_size)
+            weight = relay.layout_transform(weight, "HWOI", "HWIO4o")
+
+            new_attrs["tile_size"] = tile_size
+            new_attrs["channels"] = CO * COB
+
+            new_data = data_tensor
+            new_weight = te.placeholder(
+                (KH + tile_size - 1, KW + tile_size - 1, CI, CO, COB),
+                dtype=kernel_tensor.dtype,
+            )
+            new_workload = autotvm.task.args_to_workload(
+                [new_data, new_weight, strides, padding, dilation, out_dtype],
+                topi_tmpl,
+            )
+            dispatch_ctx.update(target, new_workload, cfg)
+            return relay.nn.contrib_conv2d_winograd_without_weight_transform(
+                inputs[0], weight, **new_attrs
+            )
+
         assert data_layout == "NCHW" and kernel_layout == "OIHW"
         N, CI, H, W = get_const_tuple(data_tensor.shape)
         CO, _, KH, KW = get_const_tuple(kernel_tensor.shape)
 
         # pre-compute weight transformation in winograd
-        tile_size = _infer_tile_size(tinfos[0])
-
         #weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size, layout_transform=True)
         weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size)
         weight = relay.transpose(weight, axes=[0, 1, 3, 2])
