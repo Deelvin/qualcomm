@@ -63,13 +63,35 @@ def schedule_conv2d_nchw_winograd(cfg, outs):
 def schedule_conv2d_nchw_winograd_acc32(cfg, outs):
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32")
 
-def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag):
+@autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform.image2d")
+def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, padding, dilation, out_dtype):
+    args={"shared" : False, "accumulator" : "float16"}
+    return conv2d_nchw_winograd_comp(
+        cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
+    )
+
+@autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
+def conv2d_nchw_winograd_without_weight_transform_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
+    args={"shared" : False, "accumulator" : "float32"}
+    return conv2d_nchw_winograd_comp(
+        cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
+    )
+
+@autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform.image2d")
+def schedule_conv2d_nchw_winograd_without_weight_transform(cfg, outs):
+    return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16", pre_computed=True)
+
+@autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
+def schedule_conv2d_nchw_winograd_without_weight_transform_acc32(cfg, outs):
+    return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32", pre_computed=True)
+
+def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag, pre_computed=False):
     outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
     s = te.create_schedule([x.op for x in outs])
 
     def _callback(op):
         if op.tag == tag:
-            schedule_conv2d_winograd(cfg, s, op.output(0), pre_computed=False)
+            schedule_conv2d_winograd(cfg, s, op.output(0), pre_computed=pre_computed)
 
     traverse_inline(s, outs[0].op, _callback)
     return s
@@ -85,6 +107,8 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     HSTR, WSTR = (strides, strides) if isinstance(strides, int) else strides
 
     convert_from4d = False
+    print("data.shape: ", data.shape)
+    print("kernel.shape: ", kernel.shape)
     if len(data.shape) == 4:
         N, DCI, H, W = get_const_tuple(data.shape)
         out_channels, CI, KH, KW = get_const_tuple(kernel.shape)
@@ -95,15 +119,32 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         if autotvm.GLOBAL_SCOPE.in_tuning == True:
             dshape = (N, in_channel_chunks, H, W, in_channel_block)
             data = tvm.te.placeholder(dshape, data.dtype, name="data_placeholder")
-            kshape = (out_channel_chunks, CI, KH, KW, out_channel_block)
-            kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
+            if not pre_computed:  # kernel tensor is raw tensor, do strict check
+                kshape = (out_channel_chunks, CI, KH, KW, out_channel_block)
+                kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
+            else:
+                alpha = KW + tile_size - 1
+                kshape = (alpha, alpha, CI, out_channel_chunks, out_channel_block)
+                kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
         else:
             convert_from4d = True
             data = pack_input(data, "NCHW", N, in_channel_chunks, in_channel_block, in_channel_tail, H, W)
-            kernel = pack_filter(kernel, "OIHW", out_channel_chunks, out_channel_block, out_channel_tail,
-                                 CI, in_channel_chunks, in_channel_block, in_channel_tail, KH, KW)
+            if not pre_computed:  # kernel tensor is raw tensor, do strict check
+                kernel = pack_filter(kernel, "OIHW", out_channel_chunks, out_channel_block, out_channel_tail,
+                                     CI, in_channel_chunks, in_channel_block, in_channel_tail, KH, KW)
+            else:
+                alpha = KW + tile_size - 1
+                kernel = pack_filter(kernel, "HWIO", out_channel_chunks, out_channel_block, out_channel_tail,
+                                     CI, in_channel_chunks, in_channel_block, in_channel_tail, alpha, alpha)
     N, DCI, H, W, CB = get_const_tuple(data.shape)
-    CO, CI, KH, KW, COB = get_const_tuple(kernel.shape)
+    if not pre_computed:  # kernel tensor is raw tensor, do strict check
+        CO, CI, KH, KW, COB = get_const_tuple(kernel.shape)
+        alpha = KW + tile_size - 1
+        assert HSTR == 1 and WSTR == 1 and KH == KW
+    else:
+        alpha, _, CI, CO, COB = get_const_tuple(kernel.shape)
+        KH = KW = alpha + 1 - tile_size
+        assert HSTR == 1 and WSTR == 1 and dilation_h == 1 and dilation_w == 1
     assert DCI * CB == CI and CB == COB
 
     if isinstance(N, tvm.tir.Any):
@@ -114,9 +155,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
             "adreno winograd conv2d doesn't support dynamic input\
                            height or width."
         )
-
-    alpha = KW + tile_size - 1
-    assert HSTR == 1 and WSTR == 1 and KH == KW
 
     pt, pl, pb, pr = nn.get_pad_tuple(padding, (KH, KW))
     data_pad = nn.pad(data, (0, 0, pt, pl, 0), (0, 0, pb, pr, 0), name="data_pad")
@@ -132,15 +170,20 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     P = N * nH * nW if isinstance(N, int) else nH * nW
 
     # transform kernel
-    r_kh = te.reduce_axis((0, KH), name="r_kh")
-    r_kw = te.reduce_axis((0, KW), name="r_kw")
-    kernel_pack = te.compute(
-        (alpha, alpha, CI, CO, COB),
-        lambda eps, nu, ci, co, cob: te.sum(
-            kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
-        ),
-        name="kernel_pack",
-    )
+    if not pre_computed:
+        print("kernel_pack repacked")
+        r_kh = te.reduce_axis((0, KH), name="r_kh")
+        r_kw = te.reduce_axis((0, KW), name="r_kw")
+        kernel_pack = te.compute(
+            (alpha, alpha, CI, CO, COB),
+            lambda eps, nu, ci, co, cob: te.sum(
+                kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+            ),
+            name="kernel_pack",
+        )
+    else:
+        print("kernel_pack pre repacked")
+        kernel_pack = kernel
 
     idxdiv = tvm.tir.indexdiv
     idxmod = tvm.tir.indexmod
@@ -171,7 +214,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
-            kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
+            kernel_pack[eps][nu][ci * CB + cb][co][cob].astype(args["accumulator"]) * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
         ),
         name="bgemm",
     )
@@ -234,6 +277,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     kernel_pack, data_pack = s[bgemm].op.input_tensors
     input_tile, B = s[data_pack].op.input_tensors
     pad_data = s[input_tile].op.input_tensors[0]
+    print(" >>>>> schedule_conv2d_winograd")
 
     # data transform
     s[B].compute_inline()
@@ -258,25 +302,29 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[input_tile].compute_at(s[data_pack], pi)
 
     # transform kernel
-    kernel, G = s[kernel_pack].op.input_tensors
-    eps, nu, ci, co, cob = s[kernel_pack].op.axis
-    if autotvm.GLOBAL_SCOPE.in_tuning:
-        # skip this part during tuning to make recrods accurate
-        # this part will be pre-computed during pre-compute optimization pass
-        s[G].pragma(s[G].op.axis[0], "debug_skip_region")
-        s[kernel_pack].pragma(eps, "debug_skip_region")
-    else:
-        s[G].compute_inline()
-        r_a, r_b = s[kernel_pack].op.reduce_axis
-        for axis in [eps, nu, r_a, r_b]:
-            s[kernel_pack].unroll(axis)
+    if not pre_computed:
+        kernel, G = s[kernel_pack].op.input_tensors
+        eps, nu, ci, co, cob = s[kernel_pack].op.axis
+        if autotvm.GLOBAL_SCOPE.in_tuning:
+            # skip this part during tuning to make recrods accurate
+            # this part will be pre-computed during pre-compute optimization pass
+            s[G].pragma(s[G].op.axis[0], "debug_skip_region")
+            s[kernel_pack].pragma(eps, "debug_skip_region")
+        else:
+            s[G].compute_inline()
+            r_a, r_b = s[kernel_pack].op.reduce_axis
+            for axis in [eps, nu, r_a, r_b]:
+                s[kernel_pack].unroll(axis)
 
-        fused = s[kernel_pack].fuse(ci, co)
-        bb, tt = s[kernel_pack].split(fused, 128)
-        s[kernel_pack].reorder(bb, tt, eps, nu, r_a, r_b, cob)
-        s[kernel_pack].vectorize(cob)
-        s[kernel_pack].bind(bb, te.thread_axis("blockIdx.x"))
-        s[kernel_pack].bind(tt, te.thread_axis("threadIdx.x"))
+            fused = s[kernel_pack].fuse(ci, co)
+            bb, tt = s[kernel_pack].split(fused, 128)
+            s[kernel_pack].reorder(bb, tt, eps, nu, r_a, r_b, cob)
+            s[kernel_pack].vectorize(cob)
+            s[kernel_pack].bind(bb, te.thread_axis("blockIdx.x"))
+            s[kernel_pack].bind(tt, te.thread_axis("threadIdx.x"))
+    else:
+        print("Pre_computed")
+        kernel = kernel_pack
 
     if isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag:
         # manage scheduling of datacopy
