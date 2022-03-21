@@ -659,7 +659,7 @@ reg.register_pattern("nn.contrib_conv2d_gemm_weight_transform", OpPattern.OUT_EL
 @reg.register_compute("nn.contrib_conv2d_winograd_weight_transform")
 def compute_contrib_conv2d_winograd_weight_transform(attrs, inputs, out_dtype):
     """Compute definition of contrib_conv2d_winograd_weight_transform"""
-    out = topi.nn.conv2d_winograd_weight_transform(inputs[0], attrs.get_int("tile_size"), attrs.get_int("layout_transform"))
+    out = topi.nn.conv2d_winograd_weight_transform(inputs[0], attrs.get_int("tile_size"))
     return [out]
 
 
