@@ -2522,7 +2522,7 @@ def contrib_depthwise_conv2d_nchwc(
     )
 
 
-def contrib_conv2d_winograd_weight_transform(weight, tile_size):
+def contrib_conv2d_winograd_weight_transform(weight, tile_size, layout_transform=True):
     r"""Weight Transformation part for 2D convolution with winograd algorithm.
 
     We separate this as a single op to enable pre-compute for inference.
@@ -2536,12 +2536,15 @@ def contrib_conv2d_winograd_weight_transform(weight, tile_size):
     tile_size : int
         The Tile size of winograd. E.g. 2 for F(2x2, 3x3) and 4 for F(4x4, 3x3)
 
+    layout_transform : bool
+        Transform layout from OIHW to HWOI
+
     Returns
     -------
     result : tvm.relay.Expr
         The computed result.
     """
-    return _make.contrib_conv2d_winograd_weight_transform(weight, tile_size)
+    return _make.contrib_conv2d_winograd_weight_transform(weight, tile_size, layout_transform)
 
 
 def contrib_conv2d_gemm_weight_transform(weights, tile_rows, tile_cols):
