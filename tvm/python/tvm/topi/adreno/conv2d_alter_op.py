@@ -96,7 +96,7 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
             logger.warning("Does not support weight pre-transform for dilated convolution.")
             return None
 
-        tile_size = _infer_tile_size(tinfos[0])
+        tile_size = _infer_tile_size(data_tensor)
         if len(data_tensor.shape) == 5:
             assert data_layout == "NCHW4c" and kernel_layout == "OIHW4o"
             N, CI, H, W, CB = get_const_tuple(data_tensor.shape)

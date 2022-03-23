@@ -107,12 +107,13 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     HSTR, WSTR = (strides, strides) if isinstance(strides, int) else strides
 
     convert_from4d = False
-    print("data.shape: ", data.shape)
-    print("kernel.shape: ", kernel.shape)
     if len(data.shape) == 4:
         N, DCI, H, W = get_const_tuple(data.shape)
-        out_channels, CI, KH, KW = get_const_tuple(kernel.shape)
-        assert DCI == CI
+        if not pre_computed:
+            out_channels, CI, KH, KW = get_const_tuple(kernel.shape)
+        else:
+            alpha, _, CI, out_channels = get_const_tuple(kernel.shape)
+            KH = KW = alpha + 1 - tile_size
 
         in_channel_chunks, in_channel_block, in_channel_tail = split_to_chunks(CI, 4)
         out_channel_chunks, out_channel_block, out_channel_tail = split_to_chunks(out_channels, 4)
@@ -123,7 +124,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
                 kshape = (out_channel_chunks, CI, KH, KW, out_channel_block)
                 kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
             else:
-                alpha = KW + tile_size - 1
                 kshape = (alpha, alpha, CI, out_channel_chunks, out_channel_block)
                 kernel = tvm.te.placeholder(kshape, kernel.dtype, name="kernel_placeholder")
         else:
@@ -133,7 +133,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
                 kernel = pack_filter(kernel, "OIHW", out_channel_chunks, out_channel_block, out_channel_tail,
                                      CI, in_channel_chunks, in_channel_block, in_channel_tail, KH, KW)
             else:
-                alpha = KW + tile_size - 1
                 kernel = pack_filter(kernel, "HWIO", out_channel_chunks, out_channel_block, out_channel_tail,
                                      CI, in_channel_chunks, in_channel_block, in_channel_tail, alpha, alpha)
     N, DCI, H, W, CB = get_const_tuple(data.shape)
@@ -145,7 +144,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         alpha, _, CI, CO, COB = get_const_tuple(kernel.shape)
         KH = KW = alpha + 1 - tile_size
         assert HSTR == 1 and WSTR == 1 and dilation_h == 1 and dilation_w == 1
-    assert DCI * CB == CI and CB == COB
 
     if isinstance(N, tvm.tir.Any):
         N = tvm.te.size_var("n")
@@ -171,7 +169,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     # transform kernel
     if not pre_computed:
-        print("kernel_pack repacked")
         r_kh = te.reduce_axis((0, KH), name="r_kh")
         r_kw = te.reduce_axis((0, KW), name="r_kw")
         kernel_pack = te.compute(
@@ -182,7 +179,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
             name="kernel_pack",
         )
     else:
-        print("kernel_pack pre repacked")
         kernel_pack = kernel
 
     idxdiv = tvm.tir.indexdiv
