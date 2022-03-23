@@ -51,7 +51,6 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
     kernel_layout = attrs["kernel_layout"]
     data_tensor, kernel_tensor = tinfos
     data_dtype = data_tensor.dtype
-    kernel_dtype = kernel_tensor.dtype
     out_dtype = out_type.dtype
 
     if isinstance(dispatch_ctx, autotvm.task.ApplyGraphBest):
@@ -91,12 +90,12 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
     topi_tmpl = workload[0]
 
     if "conv2d_nchw_winograd" in topi_tmpl:
+        suffix = "_acc_32" if "acc_32" in topi_tmpl else ""
+        wkl_name = "conv2d_nchw_winograd_without_weight_transform" + suffix + ".image2d"
         if dilation != (1, 1):
             logger.warning("Does not support weight pre-transform for dilated convolution.")
             return None
 
-        print("data_layout: ", data_layout)
-        print("kernel_layout: ", kernel_layout)
         tile_size = _infer_tile_size(tinfos[0])
         if len(data_tensor.shape) == 5:
             assert data_layout == "NCHW4c" and kernel_layout == "OIHW4o"
@@ -111,12 +110,12 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
 
             new_data = data_tensor
             new_weight = te.placeholder(
-                (KH + tile_size - 1, KW + tile_size - 1, CI, CO, COB),
+                (KH + tile_size - 1, KW + tile_size - 1, CI * CB, CO, COB),
                 dtype=kernel_tensor.dtype,
             )
             new_workload = autotvm.task.args_to_workload(
                 [new_data, new_weight, strides, padding, dilation, out_dtype],
-                topi_tmpl,
+                wkl_name,
             )
             dispatch_ctx.update(target, new_workload, cfg)
             return relay.nn.contrib_conv2d_winograd_without_weight_transform(
@@ -130,7 +129,7 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
         # pre-compute weight transformation in winograd
         #weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size, layout_transform=True)
         weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size)
-        weight = relay.transpose(weight, axes=[0, 1, 3, 2])
+        weight = relay.transpose(weight, axes=[0, 1, 3, 2]) # HWOI -> HWIO
         new_attrs["tile_size"] = tile_size
         new_attrs["channels"] = CO
 
@@ -147,10 +146,9 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
             num_filter_block = 4
 
         if in_channel_block != 4 or num_filter_block != 4:
-            #weight = relay.transpose(weight, axes=[2, 3, 1, 0])
             new_workload = autotvm.task.args_to_workload(
                 [new_data, new_weight, strides, padding, dilation, out_dtype],
-                topi_tmpl,
+                wkl_name,
             )
             dispatch_ctx.update(target, new_workload, cfg)
             return relay.nn.contrib_conv2d_winograd_without_weight_transform(
@@ -166,9 +164,9 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
         #    inputs[0], weight, **new_attrs
         #)
 
-        print("Kernel layout: ", kernel_layout)
         new_attrs["data_layout"] = "NCHW%dc" % in_channel_block
         # (oc, ic, h, w) -> (OC, IC, h, w, ic, oc)
+        # TODO: @echuraev: It should be HWIO4o instead of OIHW4w
         new_attrs["kernel_layout"] = "OIHW%dw" % num_filter_block
         #new_attrs["kernel_layout"] = "HWIO%do" % num_filter_block
         new_attrs["out_layout"] = "NCHW%dc" % num_filter_block
@@ -180,7 +178,6 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
             (KH + tile_size - 1, KW + tile_size - 1, CI, CO // num_filter_block, num_filter_block),
             dtype=kernel_tensor.dtype,
         )
-        print("topi_tmpl: ", topi_tmpl)
         new_workload = autotvm.task.args_to_workload(
             [
                 new_data,
@@ -190,7 +187,7 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
                 dilation,
                 out_dtype,
             ],
-            topi_tmpl
+            wkl_name,
         )
         dispatch_ctx.update(target, new_workload, cfg)
         return relay.nn.contrib_conv2d_winograd_without_weight_transform(
