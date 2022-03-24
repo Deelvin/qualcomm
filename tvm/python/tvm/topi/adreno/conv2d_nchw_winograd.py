@@ -184,14 +184,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     idxdiv = tvm.tir.indexdiv
     idxmod = tvm.tir.indexmod
     N, CI, H, W, CB = get_const_tuple(data.shape)
-    # pack input tile
-    input_tile = te.compute(
-        (CI, P, alpha, alpha, CB),
-        lambda c, p, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][
-            idxmod(idxdiv(p, nW), nH) * m + eps
-        ][idxmod(p, nW) * m + nu][cb].astype(args["accumulator"]),
-        name="d",
-    )
 
     # transform data
     r_a = te.reduce_axis((0, alpha), "r_a")
@@ -199,7 +191,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     data_pack = te.compute(
         (alpha, alpha, CI, P, CB),
         lambda eps, nu, ci, p, cb: te.sum(
-            input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb].astype(args["accumulator"]) * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
     )
@@ -271,19 +263,17 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     inverse = s[output].op.input_tensors[0]
     bgemm, A = s[inverse].op.input_tensors
     kernel_pack, data_pack = s[bgemm].op.input_tensors
-    input_tile, B = s[data_pack].op.input_tensors
-    pad_data = s[input_tile].op.input_tensors[0]
-    print(" >>>>> schedule_conv2d_winograd")
+    pad_data, B = s[data_pack].op.input_tensors
 
     # data transform
     s[B].compute_inline()
     s[A].compute_inline()
 
-    data_l = s.cache_write(data_pack, "local")
-    eps, nu, c, p, _ = s[data_l].op.axis
-    r_a, r_b = s[data_l].op.reduce_axis
-    for axis in [eps, nu, r_a, r_b]:
-        s[data_l].unroll(axis)
+    #data_l = s.cache_write(data_pack, "local")
+    #eps, nu, c, p, _ = s[data_l].op.axis
+    #r_a, r_b = s[data_l].op.reduce_axis
+    #for axis in [eps, nu, r_a, r_b]:
+    #    s[data_l].unroll(axis)
 
     eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
@@ -294,8 +284,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[data_pack].bind(bb, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tt, te.thread_axis("threadIdx.x"))
 
-    s[data_l].compute_at(s[data_pack], pi)
-    s[input_tile].compute_at(s[data_pack], pi)
+    #s[data_l].compute_at(s[data_pack], pi)
 
     # transform kernel
     if not pre_computed:
@@ -319,7 +308,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
             s[kernel_pack].bind(bb, te.thread_axis("blockIdx.x"))
             s[kernel_pack].bind(tt, te.thread_axis("threadIdx.x"))
     else:
-        print("Pre_computed")
         kernel = kernel_pack
 
     if isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag:
