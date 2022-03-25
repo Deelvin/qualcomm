@@ -737,7 +737,7 @@ def conv2d_gemm_weight_transform(kernel, tile_rows, tile_cols):
     )
 
 
-def conv2d_winograd_weight_transform(kernel, tile_size):
+def conv2d_winograd_weight_transform(kernel, tile_size, layout_transform=True):
     """Weight transformation for winograd
 
     Parameters
@@ -746,6 +746,8 @@ def conv2d_winograd_weight_transform(kernel, tile_size):
         The raw kernel tensor with layout "NCHW".
     tile_size: int
         Tile size of winograd transform. e.g. 2 for F(2x2, 3x3) and 4 for F(4x4, 3x3)
+    layout_transform : bool
+        Transform layout from OIHW to HWOI
 
     Returns
     -------
@@ -763,13 +765,28 @@ def conv2d_winograd_weight_transform(kernel, tile_size):
 
     r_kh = te.reduce_axis((0, K), name="r_kh")
     r_kw = te.reduce_axis((0, K), name="r_kw")
-    return te.compute(
-        shape,
-        lambda eps, nu, co, ci: te.sum(
-            kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
-        ),
-        name="transform_weight",
-    )
+    if layout_transform is True:
+        return te.compute(
+            shape,
+            lambda eps, nu, co, ci: te.sum(
+                kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+            ),
+            name="transform_weight",
+        )
+    else:
+        CO, CI, H, W = (shape[-2], shape[-1], r, r)
+        print(shape)
+        print(">>> CO: ", CO)
+        print(">>> CI: ", CI)
+        print(">>> H: ", H)
+        print(">>> W: ", W)
+        return te.compute(
+            (CO, CI, H, W),
+            lambda co, ci, eps, nu: te.sum(
+                kernel[co][ci][r_kh][r_kw] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+            ),
+            name="transform_weight",
+        )
 
 
 def conv2d_winograd_nnpack_weight_transform(kernel, convolution_algorithm, out_dtype):
