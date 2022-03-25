@@ -36,10 +36,9 @@
 namespace tvm {
 namespace relay {
 
-Expr MakeConvWinogradWeightTransform(Expr weight, int tile_size, bool layout_transform, std::string op_name) {
+Expr MakeConvWinogradWeightTransform(Expr weight, int tile_size, std::string op_name) {
   auto attrs = make_object<ConvWinogradWeightTransformAttrs>();
   attrs->tile_size = tile_size;
-  attrs->layout_transform = layout_transform;
   const Op& op = Op::Get(op_name);
   return Call(op, {weight}, Attrs(attrs), {});
 }
@@ -324,8 +323,8 @@ RELAY_REGISTER_OP("nn.contrib_conv2d_winograd_without_weight_transform")
 TVM_REGISTER_NODE_TYPE(ConvWinogradWeightTransformAttrs);
 
 TVM_REGISTER_GLOBAL("relay.op.nn._make.contrib_conv2d_winograd_weight_transform")
-    .set_body_typed([](Expr weight, int tile_size, bool layout_transform) {
-      return MakeConvWinogradWeightTransform(weight, tile_size, layout_transform,
+    .set_body_typed([](Expr weight, int tile_size) {
+      return MakeConvWinogradWeightTransform(weight, tile_size,
                                              "nn.contrib_conv2d_winograd_weight_transform");
     });
 
@@ -381,7 +380,7 @@ RELAY_REGISTER_OP("nn.contrib_conv3d_winograd_without_weight_transform")
 // relay.nn.contrib_conv3d_winograd_weight_transform
 TVM_REGISTER_GLOBAL("relay.op.nn._make.contrib_conv3d_winograd_weight_transform")
     .set_body_typed([](Expr weight, int tile_size) {
-      return MakeConvWinogradWeightTransform(weight, tile_size, true,
+      return MakeConvWinogradWeightTransform(weight, tile_size,
                                              "nn.contrib_conv3d_winograd_weight_transform");
     });
 
