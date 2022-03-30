@@ -269,11 +269,9 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[B].compute_inline()
     s[A].compute_inline()
 
-    #data_l = s.cache_write(data_pack, "local")
-    #eps, nu, c, p, _ = s[data_l].op.axis
-    #r_a, r_b = s[data_l].op.reduce_axis
-    #for axis in [eps, nu, r_a, r_b]:
-    #    s[data_l].unroll(axis)
+    # Padding to texture
+    AA = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [data_pack])
+    bind_data_copy(s[AA])
 
     eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
@@ -283,8 +281,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[data_pack].vectorize(cb)
     s[data_pack].bind(bb, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tt, te.thread_axis("threadIdx.x"))
-
-    #s[data_l].compute_at(s[data_pack], pi)
 
     # transform kernel
     if not pre_computed:
