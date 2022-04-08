@@ -310,7 +310,8 @@ class StorageInfo : private ExprVisitor{
         supports_texture_storage = true;
       }
     } else if (auto attrs = call->attrs.as<Conv2DWinogradAttrs>()) {
-      if (attrs->data_layout == "NCHW4c" && attrs->kernel_layout == "OIHW4o") {
+      // TODO: @echuraev to remove OIHW4w
+      if (attrs->data_layout == "NCHW4c" && (attrs->kernel_layout == "OIHW4o" || attrs->kernel_layout == "OIHW4w")) {
         supports_texture_storage = true;
       }
     } else if (auto attrs = call->attrs.as<GlobalPool2DAttrs>()) {

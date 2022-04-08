@@ -155,6 +155,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         )
 
     pt, pl, pb, pr = nn.get_pad_tuple(padding, (KH, KW))
+    # 0.12 ms
     data_pad = nn.pad(data, (0, 0, pt, pl, 0), (0, 0, pb, pr, 0), name="data_pad")
 
     r = KW
@@ -184,21 +185,34 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     idxdiv = tvm.tir.indexdiv
     idxmod = tvm.tir.indexmod
     N, CI, H, W, CB = get_const_tuple(data.shape)
+    #input_tile = te.compute(
+    #    (CI, P, alpha, alpha, CB),
+    #    lambda c, p, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][
+    #        idxmod(idxdiv(p, nW), nH) * m + eps
+    #    ][idxmod(p, nW) * m + nu][cb].astype(args["accumulator"]),
+    #    name="d",
+    #)
 
     # transform data
     r_a = te.reduce_axis((0, alpha), "r_a")
     r_b = te.reduce_axis((0, alpha), "r_a")
+    # 6.26 ms
+    # compute op -> buffer ? How to force to be texture
     data_pack = te.compute(
         (alpha, alpha, CI, P, CB),
         lambda eps, nu, ci, p, cb: te.sum(
             data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb].astype(args["accumulator"]) * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            #input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
     )
 
+    # cache_read: 0.225 ms
+
     # do batch gemm
     ci = te.reduce_axis((0, CI), name="ci")
     cb = te.reduce_axis((0, CB), name="cb")
+    # 2.84 ms
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
@@ -210,6 +224,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     # inverse transform
     r_a = te.reduce_axis((0, alpha), "r_a")
     r_b = te.reduce_axis((0, alpha), "r_a")
+    # 1.09 ms
     inverse = te.compute(
         (CO, P, m, m, COB),
         lambda co, p, vh, vw, cob: te.sum(
@@ -264,6 +279,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     bgemm, A = s[inverse].op.input_tensors
     kernel_pack, data_pack = s[bgemm].op.input_tensors
     pad_data, B = s[data_pack].op.input_tensors
+    #input_tile, B = s[data_pack].op.input_tensors
+    #pad_data = s[input_tile].op.input_tensors[0]
 
     # data transform
     s[B].compute_inline()
@@ -276,11 +293,21 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
     fused = s[data_pack].fuse(c, p)
-    bb, tt = s[data_pack].split(fused, 128)
-    s[data_pack].reorder(bb, tt, pi, eps, nu, cb)
+    bx, tx = s[data_pack].split(fused, 128)
+    #fused = s[data_pack].fuse(nu, eps)
+    #cfg.define_split("tile_y", fused, num_outputs=2)
+    #by, ty = cfg["tile_y"].apply(s, data_pack, fused)
+    #by, ty = s[data_pack].split(fused, 8)
+    by, ty = nu, eps
+    #s[data_pack].reorder(bb, tt, pi, eps, nu, cb)
+    s[data_pack].reorder(bx, by, tx, ty, pi, cb)
     s[data_pack].vectorize(cb)
-    s[data_pack].bind(bb, te.thread_axis("blockIdx.x"))
-    s[data_pack].bind(tt, te.thread_axis("threadIdx.x"))
+    s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
+    s[data_pack].bind(by, te.thread_axis("blockIdx.y"))
+    s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
+    s[data_pack].bind(ty, te.thread_axis("threadIdx.y"))
+    s[data_pack].bind(pi, te.thread_axis("vthread"))
+    #s[input_tile].compute_at(s[data_pack], pi)
 
     # transform kernel
     if not pre_computed:
@@ -335,8 +362,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     ##### space definition end #####
 
     # batch gemm
-    C = bgemm
-    OL = s.cache_write(C, "local")
+    OL = s.cache_write(bgemm, "local")
     AA = s.cache_read(data_pack, get_texture_storage(data_pack.shape), [OL])
     bind_data_copy(s[AA])
     if (autotvm.GLOBAL_SCOPE.in_tuning or
@@ -348,23 +374,23 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # tile and bind spatial axes
     bgemm_scope, b = s[bgemm].split(b, nparts=1)
-    bz, vz, tz, zi = cfg["tile_b"].apply(s, C, b)
-    by, vy, ty, yi = cfg["tile_y"].apply(s, C, y)
-    bx, vx, tx, xi = cfg["tile_x"].apply(s, C, x)
-    s[C].bind(bz, te.thread_axis("blockIdx.z"))
-    s[C].bind(by, te.thread_axis("blockIdx.y"))
-    s[C].bind(bx, te.thread_axis("blockIdx.x"))
-    s[C].bind(vz, te.thread_axis("vthread"))
-    s[C].bind(vy, te.thread_axis("vthread"))
-    s[C].bind(vx, te.thread_axis("vthread"))
-    s[C].bind(tz, te.thread_axis("threadIdx.z"))
-    s[C].bind(ty, te.thread_axis("threadIdx.y"))
-    s[C].bind(tx, te.thread_axis("threadIdx.x"))
-    s[C].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi, cb)
-    s[C].vectorize(cb)
+    bz, vz, tz, zi = cfg["tile_b"].apply(s, bgemm, b)
+    by, vy, ty, yi = cfg["tile_y"].apply(s, bgemm, y)
+    bx, vx, tx, xi = cfg["tile_x"].apply(s, bgemm, x)
+    s[bgemm].bind(bz, te.thread_axis("blockIdx.z"))
+    s[bgemm].bind(by, te.thread_axis("blockIdx.y"))
+    s[bgemm].bind(bx, te.thread_axis("blockIdx.x"))
+    s[bgemm].bind(vz, te.thread_axis("vthread"))
+    s[bgemm].bind(vy, te.thread_axis("vthread"))
+    s[bgemm].bind(vx, te.thread_axis("vthread"))
+    s[bgemm].bind(tz, te.thread_axis("threadIdx.z"))
+    s[bgemm].bind(ty, te.thread_axis("threadIdx.y"))
+    s[bgemm].bind(tx, te.thread_axis("threadIdx.x"))
+    s[bgemm].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi, cb)
+    s[bgemm].vectorize(cb)
 
     # tile reduction axes
-    s[OL].compute_at(s[C], tx)
+    s[OL].compute_at(s[bgemm], tx)
     b1, b2, y, x, cb = s[OL].op.axis
     (rcc, rcb) = s[OL].op.reduce_axis
     b = s[OL].fuse(b1, b2)
@@ -372,8 +398,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[OL].reorder(rco, rci, rcb, b, y, x, cb)
     s[OL].vectorize(cb)
 
-    s[C].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
-    s[C].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
+    s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
+    s[bgemm].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
 
     # schedule inverse, output and fusion
     if output.op in s.outputs:
