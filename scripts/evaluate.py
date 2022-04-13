@@ -312,6 +312,10 @@ class ModelImporter(object):
             mod = relay.quantize.prerequisite_optimize(mod, params)
 
         mod = relay.quantize.prerequisite_optimize(mod, params)
+        # Workaround. Delete for when InferTypeLocal will be added and used in FlattenAtrousConv C++ code.
+        # 10 is the count of FlattenAtrousConv pattern entries inside this model.
+        for _ in range(10):
+            mod = tvm.relay.transform.FlattenAtrousConv()(mod)
         return (mod, params, input_shape, dtype, target)
 
 
