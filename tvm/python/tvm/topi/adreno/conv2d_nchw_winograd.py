@@ -286,10 +286,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[B].compute_inline()
     s[A].compute_inline()
 
-    # Padding to texture
-    AA = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [data_pack])
-    bind_data_copy(s[AA])
-
+    OL = s.cache_write(data_pack, "local")
     eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
     fused = s[data_pack].fuse(c, p)
@@ -299,14 +296,16 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     #by, ty = cfg["tile_y"].apply(s, data_pack, fused)
     #by, ty = s[data_pack].split(fused, 8)
     by, ty = nu, eps
-    #s[data_pack].reorder(bb, tt, pi, eps, nu, cb)
+    #s[data_pack].reorder(bx, tx, pi, eps, nu, cb)
     s[data_pack].reorder(bx, by, tx, ty, pi, cb)
     s[data_pack].vectorize(cb)
     s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
-    s[data_pack].bind(by, te.thread_axis("blockIdx.y"))
     s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
+    s[data_pack].bind(by, te.thread_axis("blockIdx.y"))
     s[data_pack].bind(ty, te.thread_axis("threadIdx.y"))
-    s[data_pack].bind(pi, te.thread_axis("vthread"))
+    s[OL].compute_at(s[data_pack], ty)
+    #s[data_pack].bind(pi, te.thread_axis("vthread"))
+    s[data_pack].set_scope(get_texture_storage(data_pack.shape))
     #s[input_tile].compute_at(s[data_pack], pi)
 
     # transform kernel
@@ -363,8 +362,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # batch gemm
     OL = s.cache_write(bgemm, "local")
-    AA = s.cache_read(data_pack, get_texture_storage(data_pack.shape), [OL])
-    bind_data_copy(s[AA])
+    #AA = s.cache_read(data_pack, get_texture_storage(data_pack.shape), [OL])
+    #bind_data_copy(s[AA])
     if (autotvm.GLOBAL_SCOPE.in_tuning or
         isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag):
         BB = s.cache_read(kernel_pack, get_texture_storage(kernel_pack.shape), [OL])
@@ -388,6 +387,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[bgemm].bind(tx, te.thread_axis("threadIdx.x"))
     s[bgemm].reorder(bgemm_scope, bz, by, bx, vz, vy, vx, tz, ty, tx, zi, yi, xi, cb)
     s[bgemm].vectorize(cb)
+    s[bgemm].set_scope(get_texture_storage(bgemm.shape))
 
     # tile reduction axes
     s[OL].compute_at(s[bgemm], tx)
