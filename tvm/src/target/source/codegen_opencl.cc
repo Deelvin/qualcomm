@@ -403,14 +403,11 @@ void CodeGenOpenCL::VisitExpr_(const CallNode* op, std::ostream& os) {
       {
         os << rhs;
       } else {
-        os << "(";
-        this->PrintType(op->dtype, os);
-        os << ")(((";
+        os << "((";
         this->PrintType(op->dtype.with_lanes(1), os);
         os << "*)&" << rhs << ")[";
         this->PrintExpr(op->args.back(), os);
         os << "]";
-        os << ")";
       }
     } else {
       os << ss.str();
