@@ -54,6 +54,7 @@ class CodeGenOpenCL final : public CodeGenC {
                     std::ostream& os);                                          // NOLINT(*)
   void PrintRestrict(const Var& v, std::ostream& os) final;                     // NOLINT(*)
   std::string CastFromTo(std::string value, DataType from, DataType target);    // NOLINT(*)
+  std::string CastTo(std::string value, DataType target);                        // NOLINT(*)
   void SetTextureScope(const std::unordered_map<const VarNode*, std::string>&); // NOLINT(*)
 
 
@@ -68,6 +69,9 @@ class CodeGenOpenCL final : public CodeGenC {
   // overload min and max to avoid ambiguous call errors
   void VisitExpr_(const MinNode* op, std::ostream& os) final;
   void VisitExpr_(const MaxNode* op, std::ostream& os) final;
+  void VisitExpr_(const AndNode* op, std::ostream& os) final;
+  void VisitExpr_(const OrNode* op, std::ostream& os) final;
+  void VisitExpr_(const SelectNode* op, std::ostream& os) final;
 
 
  private:
