@@ -127,8 +127,9 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
         CO, _, KH, KW = get_const_tuple(kernel_tensor.shape)
 
         # pre-compute weight transformation in winograd
-        #weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size)
-        #weight = relay.transpose(weight, axes=[0, 1, 3, 2]) # HWOI -> HWIO
+        #weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size, layout_transform=True)
+        weight = relay.nn.contrib_conv2d_winograd_weight_transform(inputs[1], tile_size=tile_size)
+        weight = relay.transpose(weight, axes=[0, 1, 3, 2]) # HWOI -> HWIO
         new_attrs["tile_size"] = tile_size
         new_attrs["channels"] = CO
 
@@ -154,12 +155,19 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
                 inputs[0], weight, **new_attrs
             )
 
-        print("Kernel layout: ", kernel_layout)
+        #new_workload = autotvm.task.args_to_workload(
+        #    [new_data, new_weight, strides, padding, dilation, out_dtype],
+        #    topi_tmpl,
+        #)
+        #dispatch_ctx.update(target, new_workload, cfg)
+        #return relay.nn.contrib_conv2d_winograd_without_weight_transform(
+        #    inputs[0], weight, **new_attrs
+        #)
+
         new_attrs["data_layout"] = "NCHW%dc" % in_channel_block
         # (oc, ic, h, w) -> (OC, IC, h, w, ic, oc)
         # TODO: @echuraev: It should be HWIO4o instead of OIHW4w
-        #new_attrs["kernel_layout"] = "OIHW%dw" % num_filter_block
-        new_attrs["kernel_layout"] = "HWIO%do" % num_filter_block
+        new_attrs["kernel_layout"] = "OIHW%dw" % num_filter_block
         #new_attrs["kernel_layout"] = "HWIO%do" % num_filter_block
         new_attrs["out_layout"] = "NCHW%dc" % num_filter_block
         # Store altered operator's config
