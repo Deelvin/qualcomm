@@ -129,7 +129,7 @@ int TVMDeviceCopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream
   return 0;
 }
 
-int TVMSynchronize(int device_type, int device_id, TVMStreamHandle stream) { return 0; }
+// int TVMSynchronize(int device_type, int device_id, TVMStreamHandle stream) { return 0; }
 
 static TVMMutableFuncRegistry global_func_registry;
 
@@ -371,6 +371,7 @@ int TVMFuncFree(TVMFunctionHandle func) {
 
 int RPCTimeEvaluator(TVMValue* args, int* type_codes, int num_args, TVMValue* ret_val,
                      int* ret_type_code);
+                     std::cout << "RPCTimeEvaluator:372" << std::endl;
 tvm_crt_error_t TVMInitializeRuntime() {
   int idx = 0;
   tvm_crt_error_t error = kTvmErrorNoError;
@@ -432,6 +433,7 @@ static time_evaluator_state_t g_time_evaluator_state;
 
 int RPCTimeEvaluator(TVMValue* args, int* type_codes, int num_args, TVMValue* ret_val,
                      int* ret_type_code) {
+  std::cout << "RPCTimeEvaluator:436" << std::endl;
   ret_val[0].v_handle = NULL;
   ret_type_code[0] = kTVMNullptr;
   if (num_args < 8) {
@@ -472,17 +474,21 @@ tvm_crt_error_t RunTimeEvaluator(tvm_function_index_t function_index, TVMValue* 
   if (function_index != g_time_evaluator_state.function_index) {
     return kTvmErrorTimeEvaluatorBadHandle;
   }
+  // ASSERT g_time_evaluator_state.repeat == 1
 
   // TODO(areusch): should *really* rethink needing to return doubles
   DLContext result_byte_ctx = {kDLCPU, 0};
   TVMByteArray* result_byte_arr = NULL;
+  // std::vector<double> results(g_time_evaluator_state.number);
+  // results.reserve(;
   tvm_crt_error_t err =
       TVMPlatformMemoryAllocate(sizeof(TVMByteArray), result_byte_ctx, (void*)&result_byte_arr);
   if (err != kTvmErrorNoError) {
     goto release_and_return;
   }
   result_byte_arr->data = NULL;
-  size_t data_size = sizeof(double) * g_time_evaluator_state.repeat;
+  // size_t data_size = sizeof(double) * g_time_evaluator_state.repeat;
+  size_t data_size = sizeof(double) * g_time_evaluator_state.number;
   err = TVMPlatformMemoryAllocate(data_size, result_byte_ctx, (void*)&result_byte_arr->data);
   if (err != kTvmErrorNoError) {
     goto release_and_return;
@@ -490,42 +496,60 @@ tvm_crt_error_t RunTimeEvaluator(tvm_function_index_t function_index, TVMValue* 
   result_byte_arr->size = data_size;
   double min_repeat_seconds = ((double)g_time_evaluator_state.min_repeat_ms) / 1000;
   double* iter = (double*)result_byte_arr->data;
+  iter = 888.888;
   for (int i = 0; i < g_time_evaluator_state.repeat; i++) {
     double repeat_res_seconds = 0.0;
     int exec_count = 0;
     // do-while structure ensures we run even when `min_repeat_ms` isn't set (i.e., is 0).
     do {
-      err = TVMPlatformTimerStart();
-      if (err != kTvmErrorNoError) {
-        goto release_and_return;
-      }
+      // err = TVMPlatformTimerStart();
+      // if (err != kTvmErrorNoError) {
+      //   goto release_and_return;
+      // }
+      double curr_res_seconds = 0.0;
 
       for (int j = 0; j < g_time_evaluator_state.number; j++) {
+          err = TVMPlatformTimerStart();
+          if (err != kTvmErrorNoError) {
+            goto release_and_return;
+          }
         err = TVMFuncCall(g_time_evaluator_state.func_to_time, args, type_codes, num_args, ret_val,
                           ret_type_code);
         if (err != kTvmErrorNoError) {
           goto release_and_return;
         }
+
+          double res_seconds;
+          err = TVMPlatformTimerStop(&res_seconds);
+          if (err != kTvmErrorNoError) {
+            goto release_and_return;
+          }
+          // results[j] = res_seconds;
+          // *iter = res_seconds;
+          // iter++;
+          curr_res_seconds += res_seconds;
       }
       exec_count += g_time_evaluator_state.number;
 
-      double curr_res_seconds;
-      err = TVMPlatformTimerStop(&curr_res_seconds);
-      if (err != kTvmErrorNoError) {
-        goto release_and_return;
-      }
+      // double curr_res_seconds;
+      // err = TVMPlatformTimerStop(&curr_res_seconds);
+      // if (err != kTvmErrorNoError) {
+      //   goto release_and_return;
+      // }
       repeat_res_seconds += curr_res_seconds;
+      
     } while (repeat_res_seconds < min_repeat_seconds);
-    double mean_exec_seconds = repeat_res_seconds / exec_count;
-    *iter = mean_exec_seconds;
-    iter++;
+    // double mean_exec_seconds = repeat_res_seconds / exec_count;
+    // *iter = mean_exec_seconds;
+    // iter++;
   }
+
 
   *ret_type_code = kTVMBytes;
   ret_val->v_handle = result_byte_arr;
   return err;
 
-release_and_return : {
+release_and_return : { // ICE
   tvm_crt_error_t release_err =
       TVMPlatformMemoryFree((void*)&result_byte_arr->data, result_byte_ctx);
   if (release_err != kTvmErrorNoError) {

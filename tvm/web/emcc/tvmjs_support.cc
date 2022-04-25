@@ -107,6 +107,7 @@ class AsyncLocalSession : public LocalSession {
 
   PackedFuncHandle GetFunction(const std::string& name) final {
     if (name == "runtime.RPCTimeEvaluator") {
+      std::cout << "GetFunction name == \"runtime.RPCTimeEvaluator\"" << std::endl;
       return get_time_eval_placeholder_.get();
     } else if (auto* fp = tvm::runtime::Registry::Get(name)) {
       // return raw handle because the remote need to explicitly manage it.

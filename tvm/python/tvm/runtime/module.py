@@ -226,10 +226,14 @@ class Module(object):
             def evaluator(*args):
                 """Internal wrapped evaluator."""
                 # Wrap feval so we can add more stats in future.
+                print("time_evaluator", func_name)
                 blob = feval(*args)
-                fmt = "@" + ("d" * repeat)
+                fmt = "@" +("d" * number)
+                # fmt = "@" + ("c"*100) +("d" * number)
+                print("blob\n", repr(blob))
                 results = struct.unpack(fmt, blob)
-                mean = sum(results) / float(repeat)
+                print("results\n", results)
+                mean = sum(results) / float(number)
                 return ProfileResult(mean=mean, results=results)
 
             return evaluator

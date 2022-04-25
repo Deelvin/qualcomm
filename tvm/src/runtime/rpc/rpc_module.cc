@@ -25,7 +25,9 @@
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/profiling.h>
 #include <tvm/runtime/registry.h>
-
+#include <iostream>
+#include <chrono>
+#include <thread>
 #include <cstring>
 #include <memory>
 #if defined(_M_X64) || defined(__x86_64__)
@@ -34,6 +36,7 @@
 
 #include "rpc_endpoint.h"
 #include "rpc_session.h"
+// #include "../opencl/opencl_common.h"
 
 namespace tvm {
 namespace runtime {
@@ -190,6 +193,7 @@ class RPCModuleNode final : public ModuleNode {
 
   PackedFunc GetTimeEvaluator(const std::string& name, TVMContext ctx, int number, int repeat,
                               int min_repeat_ms, const std::string& f_preproc_name) {
+    std::cout << "GetTimeEvaluator" << std::endl;
     InitRemoteFunc(&remote_get_time_evaluator_, "runtime.RPCTimeEvaluator");
     // Remove session mask because we pass ctx by parts.
     ICHECK_EQ(GetRPCSessionIndex(ctx), sess_->table_index())
@@ -360,31 +364,77 @@ PackedFunc WrapTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repe
     pf.CallPacked(args, &temp);
 
     DeviceAPI::Get(ctx)->StreamSync(ctx, nullptr);
-
-    for (int i = 0; i < repeat; ++i) {
+    std::vector<double> results(number);
+    for (int j = 0; j < repeat; ++j) {
       if (f_preproc != nullptr) {
         f_preproc.CallPacked(args, &temp);
       }
       double duration_ms = 0.0;
+      double sum_duration_ms = 0.0;
 
       do {
-        if (duration_ms > 0.0) {
-          number = static_cast<int>(std::max((min_repeat_ms / (duration_ms / number) + 1),
-                                             number * 1.618));  // 1.618 is chosen by random
+        if (sum_duration_ms > 0.0) {
+          // number = static_cast<int>(std::max((min_repeat_ms / (duration_ms / number) + 1),
+          //                                    number * 1.618));  // 1.618 is chosen by random
         }
 
-        Timer t = Timer::Start(ctx);
+        // Timer t = Timer::Start(ctx);
         // start timing
         for (int i = 0; i < number; ++i) {
-          pf.CallPacked(args, &temp);
-        }
-        t->Stop();
-        int64_t t_nanos = t->SyncAndGetElapsedNanos();
-        duration_ms = t_nanos / 1e6;
-      } while (duration_ms < min_repeat_ms);
+          // DeviceAPI::Get(ctx)->StreamSync(ctx, nullptr);
 
-      double speed = duration_ms / 1e3 / number;
-      os.write(reinterpret_cast<char*>(&speed), sizeof(speed));
+          Timer t = Timer::Start(ctx);
+          // OpenCLTimerNode t(ctx);
+          // t.Start();
+          pf.CallPacked(args, &temp);
+
+          // t.Stop();
+          t->Stop();
+          // int64_t t_nanos = t.SyncAndGetElapsedNanos();
+          int64_t t_nanos = t->SyncAndGetElapsedNanos();
+          duration_ms = t_nanos / 1e6;
+          results[i] = duration_ms;
+          sum_duration_ms += duration_ms;
+          // std::chrono::milliseconds d (500);
+          // std::this_thread::sleep_for(d);
+        }
+        // t->Stop();
+        // int64_t t_nanos = t->SyncAndGetElapsedNanos();
+        // duration_ms = t_nanos / 1e6;
+        
+      } while (sum_duration_ms < min_repeat_ms);
+      
+
+
+      // double speed = sum_duration_ms / 1e3 / number;
+      // os.write(reinterpret_cast<char*>(&speed), sizeof(speed));
+      // std::string ss(99, '\n');
+      // {
+      // auto f = Registry::Get(std::string("profiling.timer.") + DeviceName(ctx.device_type));
+      // // Timer t = Timer::Start(ctx);
+      // if (f == nullptr) {
+      //   Timer t = DefaultTimer(ctx);
+      //   t->Start();
+      //   std::string ss2 = "DefaultTimer";
+      //   // std::string ss2 = DeviceName(ctx.device_type);
+      //   for(size_t i = 0; i < ss2.size(); ++i)
+      //     ss[i] = ss2[i];
+      //   t->Stop();
+      // } else {
+      //   Timer t = f->operator()(ctx);
+      //   t->Start();
+      //   std::string ss2 = "NoDefault";
+      //   // std::string ss2 = DeviceName(ctx.device_type);
+      //   for(size_t i = 0; i < ss2.size(); ++i)
+      //     ss[i] = ss2[i];
+      //   t->Stop();
+      // }
+
+      // }
+      // os.write(ss.c_str(), 100);
+      for (int i = 0; i < number; ++i) {
+          os.write(reinterpret_cast<char*>(&results[i]), sizeof(results[i]));
+      }
     }
 
     std::string blob = os.str();

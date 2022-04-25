@@ -138,7 +138,7 @@ class GraphRuntimeDebug : public GraphRuntime {
     std::string name = param.func_name;
     uint32_t num_inputs = param.num_inputs;
     uint32_t num_outputs = param.num_outputs;
-
+    std::cout  << "RunOpRPC" << std::endl; 
     PackedFunc time_eval = runtime::Registry::Get("runtime.RPCTimeEvaluator")
                                ->
                                operator()(module_, name, static_cast<int>(ctx.device_type),
@@ -228,7 +228,157 @@ class GraphRuntimeDebug : public GraphRuntime {
 
     data_entry_[eid].CopyTo(data_out);
   }
+
+
+  /*!
+   * \brief Profile execution time of the module.
+   *
+   * We run the entire module while recording overall and per-op timing
+   * information. The module may be run multiple times to ensure everything is
+   * warmed up. This function is a more correct reflection of actual runtime of
+   * the module compared to GraphRuntimeDebug::RunIndividual as it runs the
+   * entire graph in order.
+   *
+   * \returns A table of per-op runtimes and total times.
+   */
+  String Profile() {
+    // warm up. 1 iteration does not seem enough.
+    for (int i = 0; i < 3; i++) {
+      // GraphExecutor::Run(); // TVMContext
+      GraphRuntime::Run(); // TVMContext
+    }
+
+    profiling::Profiler prof;
+    prof.Start(ctxs_);
+    for (size_t i = 0; i < op_execs_.size(); ++i) {
+      if (op_execs_[i]) {
+        // get argument shapes
+        std::vector<NDArray> shapes;
+        for (const auto& e : nodes_[i].inputs) {
+          uint32_t eid = entry_id(e);
+          shapes.push_back(data_entry_[eid]);
+        }
+        for (uint32_t j = 0; j < nodes_[i].param.num_outputs; ++j) {
+          uint32_t eid = entry_id(i, j);
+          shapes.push_back(data_entry_[eid]);
+        }
+
+        uint32_t eid = entry_id(i, 0);
+        const TVMContext& device = data_entry_[eid]->ctx;
+        prof.StartCall(nodes_[i].param.func_name, device,
+                       {{"Argument Shapes", profiling::ShapeString(shapes)}});
+        op_execs_[i]();
+        prof.StopCall();
+      }
+    }
+    prof.Stop();
+    return prof.Report();
+  }
+
 };
+// /*!
+//    * \brief Execute index-th node in the network.
+//    *
+//    * This method will do a partial run of the graph
+//    * up to index-th node.
+//    *
+//    * \param node: The index of the node.
+//    */
+//   void ExecuteNode(int node) {
+//     // ICHECK_LT(static_cast<size_t>(node), op_execs_.size());
+
+//     int start_ind;
+//     int end_ind;
+//     if (node < last_executed_node_) {
+//       start_ind = 0;
+//       end_ind = node;
+//     } else if (node > last_executed_node_) {
+//       start_ind = last_executed_node_ + 1;
+//       end_ind = node;
+//     } else {
+//       return;
+//     }
+
+//     for (int i = start_ind; i <= end_ind; i++) {
+//       if (op_execs_[i]) op_execs_[i]();
+//     }
+//     last_executed_node_ = end_ind;
+//   }
+
+//   /*!
+//    * \brief Returns index-th output of node.
+//    *
+//    * This method will return index-th out_ind output
+//    * of index-th node in the network.
+//    *
+//    * \param node: The index of the node.
+//    * \param out_ind: The index of the output.
+//    * \return Output array.
+//    */
+//   NDArray GetNodeOutput(int node, int out_ind) {
+//     // ICHECK_EQ(node, last_executed_node_);
+//     // ICHECK_LT(entry_id(node, out_ind), data_entry_.size());
+//     return data_entry_[entry_id(node, out_ind)].CopyTo({kDLCPU, 0});
+//   }
+// /*!
+//  * \brief GetFunction Get the function based on input.
+//  * \param name The function which needs to be invoked.
+//  * \param sptr_to_self Packed function pointer.
+//  */
+// PackedFunc GraphRuntimeDebug::GetFunction(const std::string& name,
+// // PackedFunc GraphExecutorDebug::GetFunction(const std::string& name,
+//                                            const ObjectPtr<Object>& sptr_to_self) {
+//   // return member functions during query.
+//   if (name == "debug_get_output") {
+//     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
+//       if (String::CanConvertFrom(args[0])) {
+//         this->DebugGetNodeOutput(this->GetNodeIndex(args[0]), args[1]);
+//       } else {
+//         this->DebugGetNodeOutput(args[0], args[1]);
+//       }
+//     });
+//   } else if (name == "execute_node") {
+//     return PackedFunc(
+//         [sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { this->ExecuteNode(args[0]); });
+//   } else if (name == "get_node_output") {
+//     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
+//       *rv = this->GetNodeOutput(args[0], args[1]);
+//     });
+//   } else if (name == "run_individual") {
+//     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
+//       int number = args[0];
+//       int repeat = args[1];
+//       int min_repeat_ms = args[2];
+//       ICHECK_GT(number, 0);
+//       ICHECK_GT(repeat, 0);
+//       ICHECK_GE(min_repeat_ms, 0);
+//       *rv = this->RunIndividual(number, repeat, min_repeat_ms);
+//     });
+//   } else if (name == "profile") {
+//     return TypedPackedFunc<profiling::Report(Array<profiling::MetricCollector>)>(
+//         [sptr_to_self, this](Array<profiling::MetricCollector> collectors) {
+//           // We cannot send Arrays over rpc, so in order to support profiling
+//           // on remotes, we accept a nullptr for collectors.
+//           if (collectors.defined()) {
+//             return this->Profile(collectors);
+//           } else {
+//             return this->Profile({});
+//           }
+//         });
+//   } else if (name == "profile_rpc") {
+//     // We cannot return a Report over RPC because TMV RPC mechanism only
+//     // supports a subset of Object classes. Instead we serialize it on the
+//     // remote (here) and deserialize it on the other end.
+//     return TypedPackedFunc<std::string()>([sptr_to_self, this]() {
+//       PackedFunc profile = GetFunction("profile", sptr_to_self);
+//       profiling::Report report = profile(Array<profiling::MetricCollector>());
+//       return report->AsJSON();
+//     });
+//   } else {
+//     return GraphRuntime::GetFunction(name, sptr_to_self);
+//     // return GraphExecutor::GetFunction(name, sptr_to_self);
+//   }
+// }
 
 /*!
  * \brief GetFunction Get the function based on input.
@@ -260,6 +410,8 @@ PackedFunc GraphRuntimeDebug::GetFunction(const std::string& name,
       ICHECK_GE(min_repeat_ms, 0);
       *rv = this->RunIndividual(number, repeat, min_repeat_ms);
     });
+  } else if (name == "profile") {
+    return TypedPackedFunc<String()>([sptr_to_self, this]() { return this->Profile(); });
   } else {
     return GraphRuntime::GetFunction(name, sptr_to_self);
   }

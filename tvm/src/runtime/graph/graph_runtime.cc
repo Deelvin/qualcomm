@@ -37,6 +37,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <tvm/runtime/profiling.h>
 
 #include "../file_utils.h"
 #include "../texture.h"

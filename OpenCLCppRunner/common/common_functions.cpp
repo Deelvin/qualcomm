@@ -181,7 +181,8 @@ void prepareOpenCLDevice(cl_device_id& device_id, cl_context& ctx, cl_command_qu
     // Create context
     ctx = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
     assert(err == CL_SUCCESS);
-    cq = clCreateCommandQueue(ctx, device_id, CL_QUEUE_PROFILING_ENABLE, &err);
+    cq = clCreateCommandQueue(ctx, device_id, 0, &err);
+    // cq = clCreateCommandQueue(ctx, device_id, CL_QUEUE_PROFILING_ENABLE, &err);
     assert(err == CL_SUCCESS);
     delete [] platforms;
 
