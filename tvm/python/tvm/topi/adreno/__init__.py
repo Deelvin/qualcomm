@@ -23,3 +23,4 @@ from .conv2d_nhwc import *
 from .depthwise_conv2d_nhwc import *
 from .pooling import *
 from .conv2d_alter_op import *
+from .injective import schedule_injective
