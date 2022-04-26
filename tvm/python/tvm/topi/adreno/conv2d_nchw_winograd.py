@@ -66,7 +66,6 @@ def schedule_conv2d_nchw_winograd_acc32(cfg, outs):
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform.image2d")
 def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float16"}
-    #print("conv2d_nchw_winograd_without_weight_transform.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
@@ -74,19 +73,16 @@ def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, pa
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def conv2d_nchw_winograd_without_weight_transform_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float32"}
-    #print("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd_without_weight_transform")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16", pre_computed=True)
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform_acc32(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd_without_weight_transform_acc32")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32", pre_computed=True)
 
 def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag, pre_computed=False):
@@ -201,24 +197,13 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         name="data_pack",
     )
 
-    if kernel_pack.dtype != args["accumulator"]:
-        kernel_pack_conv = te.compute(
-            (alpha, alpha, CI * CB, CO, COB),
-            lambda eps, nu, ci, co, cob: kernel_pack[eps][nu][ci][co][cob].astype(args["accumulator"]),
-            name="kernel_pack_conv",
-            tag="kernel_pack_conv"
-        )
-    else:
-        kernel_pack_conv = kernel_pack
-
     # do batch gemm
     ci = te.reduce_axis((0, CI), name="ci")
     cb = te.reduce_axis((0, CB), name="cb")
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
-            kernel_pack_conv[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
-            #kernel_pack[eps][nu][ci * CB + cb][co][cob].astype(args["accumulator"]) * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
+            kernel_pack[eps][nu][ci * CB + cb][co][cob].astype(args["accumulator"]) * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
         ),
         name="bgemm",
     )
@@ -260,19 +245,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     """Schedule winograd template"""
     inverse = s[output].op.input_tensors[0]
     bgemm, A = s[inverse].op.input_tensors
-    kernel_pack_conv, data_pack = s[bgemm].op.input_tensors
+    kernel_pack, data_pack = s[bgemm].op.input_tensors
     pad_data, B = s[data_pack].op.input_tensors
-    if isinstance(kernel_pack_conv.op, tvm.te.ComputeOp) and "kernel_pack_conv" in kernel_pack_conv.op.tag:
-        kernel_pack = s[kernel_pack_conv].op.input_tensors[0]
-        # manage scheduling of datacopy
-        eps, nu, ci, co, cob = s[kernel_pack_conv].op.axis
-        fused = s[kernel_pack_conv].fuse(eps, nu, ci)
-        s[kernel_pack_conv].bind(fused, te.thread_axis("blockIdx.x"))
-        s[kernel_pack_conv].bind(co, te.thread_axis("threadIdx.x"))
-        s[kernel_pack_conv].vectorize(cob)
-        #s[kernel_pack_conv].set_scope(get_texture_storage(kernel_pack_conv.shape))
-    else:
-        kernel_pack = kernel_pack_conv
 
     # data transform
     s[B].compute_inline()
@@ -291,9 +265,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     OL = s.cache_write(data_pack, "local")
     eps, nu, c, p, cb = s[data_pack].op.axis
     p, pi = s[data_pack].split(p, 1)
-    fused = s[data_pack].fuse(c, p)
-    bx, tx = s[data_pack].split(fused, 128)
-    by, ty = nu, eps
+    bx, tx = p, nu
+    by, ty = c, eps
     s[data_pack].reorder(bx, by, tx, ty, pi, cb)
     s[data_pack].vectorize(cb)
     s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
@@ -358,7 +331,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     OL = s.cache_write(bgemm, "local")
     if (autotvm.GLOBAL_SCOPE.in_tuning or
         isinstance(kernel.op, tvm.te.ComputeOp) and "filter_pack" in kernel.op.tag):
-        BB = s.cache_read(kernel_pack_conv, get_texture_storage(kernel_pack_conv.shape), [OL])
+        BB = s.cache_read(kernel_pack, get_texture_storage(kernel_pack.shape), [OL])
         bind_data_copy(s[BB])
 
     b = s[bgemm].fuse(b1, b2)

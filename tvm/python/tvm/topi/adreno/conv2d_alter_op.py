@@ -90,12 +90,8 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
     topi_tmpl = workload[0]
 
     if "conv2d_nchw_winograd" in topi_tmpl:
-        #suffix = "_acc_32" if "acc_32" in topi_tmpl else ""
         suffix = "_acc32" if "acc32" in topi_tmpl else ""
         wkl_name = "conv2d_nchw_winograd_without_weight_transform" + suffix + ".image2d"
-        #print("*" * 30)
-        #print("topi_tmpl: ", topi_tmpl, "wkl_name: ", wkl_name)
-        #print("*" * 30)
         if dilation != (1, 1):
             logger.warning("Does not support weight pre-transform for dilated convolution.")
             return None
