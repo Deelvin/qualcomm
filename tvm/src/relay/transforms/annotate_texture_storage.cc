@@ -321,8 +321,16 @@ class StorageInfo : private ExprVisitor{
       if (attrs->layout == "NCHW4c") {
         supports_texture_storage = true;
       }
+    } else if (call->attrs.as<ConcatenateAttrs>() ||
+               call->op == Op::Get("layout_transform") ||
+               call->op == Op::Get("add") ||
+               call->op == Op::Get("nn.relu")) {
+      if (const auto* ttype = call->checked_type().as<TensorTypeNode>()) {
+        if (ttype->shape.size() == 5) {
+          supports_texture_storage = true;
+        }
+      }
     }
-
     return supports_texture_storage;
   }
 
