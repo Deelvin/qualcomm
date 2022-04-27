@@ -324,7 +324,8 @@ class StorageInfo : private ExprVisitor{
     } else if (call->attrs.as<ConcatenateAttrs>() ||
                call->op == Op::Get("layout_transform") ||
                call->op == Op::Get("add") ||
-               call->op == Op::Get("nn.relu")) {
+               call->op == Op::Get("nn.relu") ||
+               call->op == Op::Get("multiply")) {
       if (const auto* ttype = call->checked_type().as<TensorTypeNode>()) {
         if (ttype->shape.size() == 5) {
           supports_texture_storage = true;
