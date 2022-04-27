@@ -25,7 +25,7 @@ from tvm import autotvm
 from tvm.contrib import utils, ndk
 from tvm.topi import testing
 
-
+# logging.basicConfig(level=logging.INFO)
 class ModelImporter(object):
     def available_models(self):
         import inspect
@@ -1651,17 +1651,17 @@ class Executor(object):
         # return 0
         #num_iter = 1
         #print("change number of iter before benchmarking")
-        num_iter = 2000
+        num_iter = 10
         if args.debug:
-            # m.run()
+            m.run(number=num_iter)
             # time_f = m.module.time_evaluator("run", ctx, number=num_iter)
-            m.profile()
+            # m.profile()
         else:
             # m.run()
             # m.profile()
             time_f = m.module.time_evaluator("run", ctx, number=num_iter)
-        cost = time_f().mean
-        print("%g secs/iteration\n" % cost)
+        # cost = time_f().mean
+        # print("%g secs/iteration\n" % cost)
 
         np.set_printoptions(threshold=sys.maxsize)
         num_outputs = m.get_num_outputs()

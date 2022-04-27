@@ -27,6 +27,8 @@
 #include <tvm/runtime/registry.h>
 
 #include <chrono>
+#include <algorithm>
+#include <numeric>
 #include <sstream>
 
 #include "../graph_runtime.h"
@@ -57,26 +59,35 @@ class GraphRuntimeDebug : public GraphRuntime {
    *         iteration only, because returning a long string over rpc can be expensive.
    */
   std::string RunIndividual(int number, int repeat, int min_repeat_ms) {
+
     // warmup run
     GraphRuntime::Run();
     std::string tkey = module_->type_key();
-    std::vector<double> time_sec_per_op(op_execs_.size(), 0);
-    if (tkey == "rpc") {
+    std::cout << "RunIndividual " << tkey << std::endl;
+    std::vector<std::vector<double> > time_sec_per_op(op_execs_.size(), std::vector<double>(number, 0));
+    // time_sec_per_op.reserve(op_execs_.size());
+    // std::vector<double> time_sec_per_op(op_execs_.size(), 0);
+    if (tkey == "rpc") { // library
       // RPC modules rely on remote timing which implements the logic from the else branch.
       for (size_t index = 0; index < op_execs_.size(); ++index) {
-        time_sec_per_op[index] += RunOpRPC(index, number, repeat, min_repeat_ms);
+        std::vector<double> v = RunOpRPC(index, number, repeat, min_repeat_ms);
+        // double average = std::accumulate(v.begin(), v.end(), 0) / v.size();
+        for(size_t i =0;i < number;++i) {
+          time_sec_per_op[index][i] += v[i];//average;
+        }
+        // time_sec_per_op[index] = v;//average;
+        // time_sec_per_op[index] += average;
+        // ICE AVR
       }
     } else {
       for (int i = 0; i < repeat; ++i) {
-        std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds>
-            tbegin, tend;
+        std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
         double duration_ms = 0.0;
-        do {
-          std::fill(time_sec_per_op.begin(), time_sec_per_op.end(), 0);
-          if (duration_ms > 0.0) {
-            number = static_cast<int>(std::max((min_repeat_ms / (duration_ms / number) + 1),
-                                               number * 1.618));  // 1.618 is chosen by random
-          }
+        // do {
+          std::fill(time_sec_per_op.begin(), time_sec_per_op.end(), std::vector<double>(number, 0));
+          // if (duration_ms > 0.0) {
+          //   number = static_cast<int>(std::max((min_repeat_ms / (duration_ms / number) + 1), number * 1.618));  // 1.618 is chosen by random
+          // }
           tbegin = std::chrono::high_resolution_clock::now();
           std::vector<std::vector<Timer>> op_timers;
           for (size_t index = 0; index < op_execs_.size(); index++) {
@@ -90,36 +101,55 @@ class GraphRuntimeDebug : public GraphRuntime {
             }
           }
           for (size_t index = 0; index < op_execs_.size(); ++index) {
-            for (auto t : op_timers[index]) {
-              time_sec_per_op[index] += t->SyncAndGetElapsedNanos() / 1e9;
+            for (size_t j =0; j < op_timers[index].size(); ++j) {
+            // for (auto t : op_timers[index]) {
+              time_sec_per_op[index][j] = op_timers[index][j]->SyncAndGetElapsedNanos() / 1e9;
+              // time_sec_per_op[index] += t->SyncAndGetElapsedNanos() / 1e9;
+              // for(size_t i =0;i < number;++i) {
+              //   time_sec_per_op[index][i] += v[i];//average;
+              // }
             }
           }
           tend = std::chrono::high_resolution_clock::now();
-          duration_ms =
-              std::chrono::duration_cast<std::chrono::duration<double>>(tend - tbegin).count() *
-              1000;
-        } while (duration_ms < min_repeat_ms);
+          duration_ms = std::chrono::duration_cast<std::chrono::duration<double>>(tend - tbegin).count() * 1000;
+        // } while (duration_ms < min_repeat_ms);
 
         LOG(INFO) << "Iteration: " << i;
         int op = 0;
         for (size_t index = 0; index < time_sec_per_op.size(); index++) {
           if (op_execs_[index]) {
-            time_sec_per_op[index] /= number;
-            LOG(INFO) << "Op #" << op++ << " " << GetNodeName(index) << ": "
-                      << time_sec_per_op[index] * 1e6 << " us/iter";
+            // time_sec_per_op[index] /= number;
+            double average = std::accumulate(time_sec_per_op[index].begin(), time_sec_per_op[index].end(), 0) / time_sec_per_op[index].size();
+            std::string s = "[";
+            for(auto& i: time_sec_per_op[index]) {
+                s+= std::to_string(i) + ", ";
+            }
+            s+="]";
+            LOG(INFO) << "Op #" << op++ << " " << GetNodeName(index) << ": " << average * 1e6 << " us/iter" << " all" << s;
+            // LOG(INFO) << "Op #" << op++ << " " << GetNodeName(index) << ": " << time_sec_per_op[index] * 1e6 << " us/iter";
           }
         }
       }
     }
 
     std::ostringstream os;
+    // os<< "iceice";
+    // os<< data_entry_[entry_id(0, 0)]->ctx;
     for (size_t index = 0; index < time_sec_per_op.size(); index++) {
-      os << time_sec_per_op[index] << ",";
+      std::string s = "";
+
+      // for(auto& ss: time_sec_per_op[index]) {
+      for(size_t i =0; i < number;++i) {
+        s += std::to_string(time_sec_per_op[index][i]) + ";";
+      }
+      os << s << ",";
+      // os << time_sec_per_op[index] << ",";
     }
+    std::cout << os.str() << std::endl;
     return os.str();
   }
 
-  double RunOpRPC(int index, int number, int repeat, int min_repeat_ms) {
+  std::vector<double> RunOpRPC(int index, int number, int repeat, int min_repeat_ms) {
     // Right now we expect either "tvm_op" for nodes which run PackedFunc or "null" for nodes which
     // represent inputs/parameters to the graph. Other types may be supported in the future, but
     // consideration would be needed as to how to do that over RPC before we support it here.
@@ -130,7 +160,8 @@ class GraphRuntimeDebug : public GraphRuntime {
 
       // NOTE: GraphRuntimeDebug expects graph nodes to have an "op" attribute of "tvm_op" or "null"
       // and "null" is a placeholder node for a parameter or input.
-      return 0;
+      // return 0;
+      return {};
     }
 
     const TVMContext& ctx = data_entry_[entry_id(index, 0)]->ctx;
@@ -162,12 +193,22 @@ class GraphRuntimeDebug : public GraphRuntime {
       setter(offs, arg);
       offs++;
     }
-    TVMRetValue rv;
+    TVMRetValue rv;//ICE
     time_eval.CallPacked(TVMArgs(values.get(), type_codes.get(), num_flat_args), &rv);
     std::string results = rv.operator std::string();
     const double* results_arr = reinterpret_cast<const double*>(results.data());
     LOG(INFO) << "Got op timing: " << results_arr[0];
-    return results_arr[0];
+    // LOG(INFO) << "Got op timing: " << results_arr[0];
+    auto r = std::vector<double>(reinterpret_cast<const double*>(results.data()), reinterpret_cast<const double*>(results.data()) + number);
+    std::string rr = "";
+    for (auto& s: r) {
+      rr += std::to_string(s) + ", ";
+    }
+    LOG(WARNING) << "Got op timing: " << rr;
+    // LOG(DEBUG) << "Got op timing: " << rr;
+    
+    return r;
+    // return results_arr[0];
   }
 
   Timer RunOpHost(int index) {
@@ -401,6 +442,7 @@ PackedFunc GraphRuntimeDebug::GetFunction(const std::string& name,
       }
     });
   } else if (name == "run_individual") {
+    std::cout << "ICE run_individual" << std::endl;
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
       int number = args[0];
       int repeat = args[1];
@@ -409,6 +451,7 @@ PackedFunc GraphRuntimeDebug::GetFunction(const std::string& name,
       ICHECK_GT(repeat, 0);
       ICHECK_GE(min_repeat_ms, 0);
       *rv = this->RunIndividual(number, repeat, min_repeat_ms);
+      // *rv = std::string("icemist");
     });
   } else if (name == "profile") {
     return TypedPackedFunc<String()>([sptr_to_self, this]() { return this->Profile(); });

@@ -114,12 +114,12 @@ class DebugResult(object):
     def get_output_tensors(self):
         """Dump the outputs to a temporary folder, the tensors are in numpy format"""
         eid = 0
-        order = 0
+        # order = 0
         output_tensors = {}
         for node, time in zip(self._nodes_list, self._time_list):
             num_outputs = self.get_graph_node_output_num(node)
             for j in range(num_outputs):
-                order += time[0]
+                # order += time[0]
                 key = node["name"] + "_" + str(j)
                 output_tensors[key] = self._output_tensor_list[eid]
                 eid += 1
@@ -198,8 +198,8 @@ class DebugResult(object):
 
     def get_debug_result(self, sort_by_time=True):
         """Return the debugger result"""
-        header = ["Node Name", "Ops", "Time(us)", "Time(%)", "Shape", "Inputs", "Outputs"]
-        lines = ["---------", "---", "--------", "-------", "-----", "------", "-------"]
+        header = ["Node Name", "Ops", "Time(us)", "Time(%)", "Shape", "Inputs", "Outputs","Times"]
+        lines = ["---------", "---", "--------", "-------", "-----", "------", "-------", "-------"]
         eid = 0
         data = []
         total_time = sum(time[0] for time in self._time_list)
@@ -213,10 +213,11 @@ class DebugResult(object):
                 name = node["name"]
                 shape = str(self._output_tensor_list[eid].shape)
                 time_us = round(time[0] * 1e6, 3)
+                times = str([round(t * 1e3, 3) for t in time])
                 time_percent = round(((time[0] / total_time) * 100), 3)
                 inputs = str(node["attrs"]["num_inputs"])
                 outputs = str(node["attrs"]["num_outputs"])
-                node_data = [name, op, time_us, time_percent, shape, inputs, outputs]
+                node_data = [name, op, time_us, time_percent, shape, inputs, outputs, times]
                 data.append(node_data)
                 eid += 1
 
@@ -235,6 +236,7 @@ class DebugResult(object):
                 if item_len > max_len:
                     max_len = item_len
             fmt = fmt + "{:<" + str(max_len + 2) + "}"
+        # print(fmt)
         log = [fmt.format(*header)]
         log.append(fmt.format(*lines))
         for row in data:
