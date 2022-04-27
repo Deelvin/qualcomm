@@ -44,6 +44,7 @@ def _infer_tile_size(data):
 @autotvm.register_topi_compute("conv2d_nchw_winograd.image2d")
 def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float16"}
+    #print(" >>>>>>>>>>> conv2d_nchw_winograd.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
     )
@@ -51,21 +52,25 @@ def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtyp
 @autotvm.register_topi_compute("conv2d_nchw_winograd_acc32.image2d")
 def conv2d_nchw_winograd_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float32"}
+    #print(" >>>>>>>>>>> conv2d_nchw_winograd_acc32.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
     )
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd.image2d")
 def schedule_conv2d_nchw_winograd(cfg, outs):
+    #print("schedule_conv2d_nchw_winograd")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16")
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_acc32.image2d")
 def schedule_conv2d_nchw_winograd_acc32(cfg, outs):
+    #print("schedule_conv2d_nchw_winograd_acc32")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32")
 
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform.image2d")
 def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float16"}
+    #print("conv2d_nchw_winograd_without_weight_transform")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
@@ -73,16 +78,19 @@ def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, pa
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def conv2d_nchw_winograd_without_weight_transform_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float32"}
+    #print("conv2d_nchw_winograd_without_weight_transform_acc32")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform(cfg, outs):
+    #print("schedule_conv2d_nchw_winograd_without_weight_transform")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16", pre_computed=True)
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform_acc32(cfg, outs):
+    #print("schedule_conv2d_nchw_winograd_without_weight_transform_acc32")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32", pre_computed=True)
 
 def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag, pre_computed=False):
@@ -159,7 +167,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     r = KW
     m = tile_size
-    A, B, G = winograd_transform_matrices(m, r, args["accumulator"])
+    A, B, G = winograd_transform_matrices(m, r, out_dtype)
 
     H = (H + pt + pb - KH) // HSTR + 1
     W = (W + pl + pr - KW) // WSTR + 1
@@ -174,7 +182,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         kernel_pack = te.compute(
             (alpha, alpha, CI, CO, COB),
             lambda eps, nu, ci, co, cob: te.sum(
-                kernel[co][ci][r_kh][r_kw][cob].astype(args["accumulator"]) * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
+                kernel[co][ci][r_kh][r_kw][cob] * G[eps][r_kh] * G[nu][r_kw], axis=[r_kh, r_kw]
             ),
             name="kernel_pack",
         )
@@ -191,7 +199,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     data_pack = te.compute(
         (alpha, alpha, CI, P, CB),
         lambda eps, nu, ci, p, cb: te.sum(
-            data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb].astype(args["accumulator"]) * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
             #input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
@@ -203,10 +211,14 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
-            kernel_pack[eps][nu][ci * CB + cb][co][cob].astype(args["accumulator"]) * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
+            (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
+            #kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
         ),
         name="bgemm",
     )
+    print("<" * 10)
+    print("kernel_pack (", kernel_pack.dtype, "): ", kernel_pack, ", data_pack (", data_pack.dtype, "): ", data_pack, ", bgemm (", bgemm.dtype, "): ", bgemm, ", accum: ", args["accumulator"])
+    print(">" * 10)
 
     # inverse transform
     r_a = te.reduce_axis((0, alpha), "r_a")
@@ -214,7 +226,8 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     inverse = te.compute(
         (CO, P, m, m, COB),
         lambda co, p, vh, vw, cob: te.sum(
-            bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw], axis=[r_a, r_b]
+            bgemm[r_a][r_b][co][p][cob] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
+            #(bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
         ),
         name="inverse",
     )
@@ -356,8 +369,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     b1, b2, y, x, cb = s[OL].op.axis
     (rcc, rcb) = s[OL].op.reduce_axis
     b = s[OL].fuse(b1, b2)
-    rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
-    s[OL].reorder(rco, rci, rcb, b, y, x, cb)
+    #rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
+    #s[OL].reorder(rco, rci, rcb, b, y, x, cb)
     s[OL].vectorize(cb)
 
     s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
