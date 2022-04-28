@@ -249,13 +249,6 @@ std::pair<IRModule, IRModule> SplitDevHostFuncs(IRModule mod_mixed, const Target
                                        << "\n";
   }
 
-  std::cout << " mHost: {{{" << std::endl;
-  std::cout << mhost << std::endl;
-  std::cout << " mHost! }}}" << std::endl;
-  std::cout << " mDevice: {{{" << std::endl;
-  std::cout << mdevice << std::endl;
-  std::cout << " mDevice! }}}" << std::endl;
-
   return {mhost, mdevice};
 }
 
