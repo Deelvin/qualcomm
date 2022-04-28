@@ -51,6 +51,7 @@ class IntrinInjecter : public tvm::arith::IRMutatorWithAnalyzer {
 
     patterns_.push_back("tvm.intrin.rule.default.");
     fma_ = runtime::Registry::Get(patterns_[0] + "fma");
+    mad_ = runtime::Registry::Get(patterns_[0] + "mad");
     if (target == "stackvm") {
       support_bitwise_op_ = false;
     }
@@ -254,10 +255,17 @@ class IntrinInjecter : public tvm::arith::IRMutatorWithAnalyzer {
     PrimExpr lhs = SwapBroadcastCast(a);
     PrimExpr rhs = SwapBroadcastCast(b);
 
-    if (fma_ != nullptr && op->dtype.is_float()) {
+    std::cout << "lower_intrin: MakeFMA" << std::endl;
+    if (fma_ != nullptr && (op->dtype.is_float() || op->dtype.is_float16())) {
+    std::cout << "\t\t\t\t\tfma" << std::endl;
       PrimExpr r = (*fma_)(Call(op->dtype, builtin::fma(), {lhs, rhs, c}));
       if (r.defined()) return this->VisitExpr(r);
+    } else if (mad_ != nullptr && (op->dtype.is_int() || op->dtype.is_uint())) {
+    std::cout << "\t\t\t\t\tmad" << std::endl;
+      PrimExpr r = (*mad_)(Call(op->dtype, builtin::mad(), {lhs, rhs, c}));
+      if (r.defined()) return this->VisitExpr(r);
     } else {
+    std::cout << "\t\t\t\t\telse" << std::endl;
       if (!lhs.same_as(a) || !rhs.same_as(b)) {
         PrimExpr mul = this->VisitExpr(Mul(lhs, rhs));
         return Add(mul, this->VisitExpr(c));
@@ -293,6 +301,7 @@ class IntrinInjecter : public tvm::arith::IRMutatorWithAnalyzer {
   // patterns
   std::vector<std::string> patterns_;
   const PackedFunc* fma_{nullptr};
+  const PackedFunc* mad_{nullptr};
   bool support_bitwise_op_{true};
 };
 

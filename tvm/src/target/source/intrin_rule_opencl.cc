@@ -85,6 +85,15 @@ static void DispatchIntelShuffle(const TVMArgs& args, TVMRetValue* rv) {
 
 TVM_REGISTER_GLOBAL("tvm.intrin.rule.opencl.tvm_warp_shuffle").set_body(DispatchIntelShuffle);
 
+struct OpenCLMad {
+  std::string operator()(DataType t, std::string name) const {
+    return "mad";
+  }
+};
+
+TVM_REGISTER_GLOBAL("tvm.intrin.rule.opencl.fma").set_body(DispatchPureExtern<OpenCLMad>);
+TVM_REGISTER_GLOBAL("tvm.intrin.rule.opencl.mad").set_body(DispatchPureExtern<OpenCLMad>);
+
 }  // namespace intrin
 }  // namespace codegen
 }  // namespace tvm

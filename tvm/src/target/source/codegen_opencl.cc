@@ -339,7 +339,26 @@ void CodeGenOpenCL::VisitStmt_(const AllocateNode* op) {
 }
 
 void CodeGenOpenCL::VisitExpr_(const CallNode* op, std::ostream& os) {
-  if (op->op.same_as(builtin::address_of())) {
+    std::cout << "CodeGenOpenCL::VisitExpr_, CallNode: " << PrettyPrint(op->op) << std::endl;
+  if (op->op.same_as(builtin::call_pure_extern())) {
+    auto func = Downcast<StringImm>(op->args[0]);
+    if (func->value == "mad") {
+      ICHECK(op->args.size() == 4);
+      os << "mad(";
+      std::ostringstream oss;
+      this->PrintExpr(op->args[1], oss);
+      os << CastTo(oss.str(), op->dtype);
+      os << ", ";
+      oss.str("");
+      this->PrintExpr(op->args[2], oss);
+      os << CastTo(oss.str(), op->dtype);
+      os << ", ";
+      oss.str("");
+      this->PrintExpr(op->args[3], oss);
+      os << CastTo(oss.str(), op->dtype);
+      os << ")";
+    }
+  } else if (op->op.same_as(builtin::address_of())) {
     // Overload tvm_address_of to add storage scope (e.g. __global).
     const LoadNode* load = op->args[0].as<LoadNode>();
     ICHECK(op->args.size() == 1 && load);
