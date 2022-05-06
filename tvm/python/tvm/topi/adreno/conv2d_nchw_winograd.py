@@ -216,9 +216,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         ),
         name="bgemm",
     )
-    print("<" * 10)
-    print("kernel_pack (", kernel_pack.dtype, "): ", kernel_pack, ", data_pack (", data_pack.dtype, "): ", data_pack, ", bgemm (", bgemm.dtype, "): ", bgemm, ", accum: ", args["accumulator"])
-    print(">" * 10)
 
     # inverse transform
     r_a = te.reduce_axis((0, alpha), "r_a")
@@ -250,6 +247,13 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     if isinstance(N, int):
         cfg.add_flop(2 * N * CO * COB * H * W * CI * CB * KH * KW)
+    #print("<" * 10)
+    #print("kernel_pack (", kernel_pack.dtype, "): ", kernel_pack)
+    #print("data_pack (", data_pack.dtype, "): ", data_pack)
+    #print("bgemm (", bgemm.dtype, "): ", bgemm, ", accum: ", args["accumulator"])
+    #print("inverse (", inverse.dtype, "): ", inverse)
+    #print("output (", output.dtype, "): ", output)
+    #print(">" * 10)
 
     return output
 
@@ -277,10 +281,18 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     OL = s.cache_write(data_pack, "local")
     eps, nu, c, p, cb = s[data_pack].op.axis
-    p, pi = s[data_pack].split(p, 1)
-    bx, tx = p, nu
-    by, ty = c, eps
-    s[data_pack].reorder(bx, by, tx, ty, pi, cb)
+    s[data_pack].reorder(eps, c, nu, p, cb)
+    f1 = s[data_pack].fuse(eps, c)
+    f2 = s[data_pack].fuse(nu, p)
+    #cfg.define_split("tile_data_x", f2, num_outputs=3, filter=lambda entry: entry.size[2] <= 16 and entry.size[1] == 4)
+    #p, pi = s[data_pack].split(p, 1)
+    by, ty = s[data_pack].split(f1, 64)
+    #bx, vx, tx = cfg["tile_data_x"].apply(s, data_pack, f2)
+    bx, tx = s[data_pack].split(f2, 16)
+    #bx, tx = p, nu
+    #by, ty = c, eps
+    s[data_pack].reorder(by, bx, ty, tx, cb)
+    #s[data_pack].reorder(bx, by, tx, ty, pi, cb)
     s[data_pack].vectorize(cb)
     s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
@@ -291,7 +303,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     r_a, r_b = s[OL].op.reduce_axis
     s[OL].reorder(eps, nu, c, p, r_a, r_b, cb)
     s[OL].vectorize(cb)
-    s[OL].compute_at(s[data_pack], ty)
+    s[OL].compute_at(s[data_pack], tx)
     s[data_pack].set_scope(get_texture_storage(data_pack.shape))
 
     # transform kernel
@@ -334,10 +346,10 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     rcc = s[bgemm].op.reduce_axis[0]
     alpha = get_const_int(b1.dom.extent)
 
-    cfg.define_split("tile_y", y, num_outputs=3, filter=lambda entry: entry.size[2] <= 32 and entry.size[1] <= 8)
-    cfg.define_split("tile_x", x, num_outputs=3, filter=lambda entry: entry.size[2] <= 32 and entry.size[1] <= 8)
+    #cfg.define_split("tile_y", y, num_outputs=3, filter=lambda entry: entry.size[2] <= 32 and entry.size[1] <= 8)
+    cfg.define_split("tile_x", x, num_outputs=3, filter=lambda entry: entry.size[2] <= 16 and entry.size[1] >= 4 and entry.size[1] <= 8)
     cfg.define_split("tile_rc", rcc, num_outputs=2)
-    cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
+    #cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
     ##### space definition end #####
 
     # batch gemm
@@ -347,20 +359,27 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         BB = s.cache_read(kernel_pack, get_texture_storage(kernel_pack.shape), [OL])
         bind_data_copy(s[BB])
 
-    b = s[bgemm].fuse(b1, b2)
+    by = s[bgemm].fuse(b1, b2, y)
 
     # tile and bind spatial axes
-    bgemm_scope, b = s[bgemm].split(b, nparts=1)
-    by, vy, ty = cfg["tile_y"].apply(s, bgemm, y)
+    bgemm_scope, by = s[bgemm].split(by, nparts=1)
+    #by, vy, ty = cfg["tile_y"].apply(s, bgemm, y)
     bx, vx, tx = cfg["tile_x"].apply(s, bgemm, x)
-    s[bgemm].bind(b, te.thread_axis("blockIdx.z"))
+    #bx = x
+    #bx, vx = s[bgemm].split(x, 4)
+    #bx, tx = s[bgemm].split(bx, 16)
+    by, ty = s[bgemm].split(by, 64)
+    #bx, tx = s[bgemm].split(x, bgemm.shape[2] // 64)
+    #s[bgemm].bind(b, te.thread_axis("blockIdx.z"))
     s[bgemm].bind(by, te.thread_axis("blockIdx.y"))
     s[bgemm].bind(bx, te.thread_axis("blockIdx.x"))
-    s[bgemm].bind(vy, te.thread_axis("vthread"))
+    #s[bgemm].bind(vy, te.thread_axis("vthread"))
     s[bgemm].bind(vx, te.thread_axis("vthread"))
     s[bgemm].bind(ty, te.thread_axis("threadIdx.y"))
     s[bgemm].bind(tx, te.thread_axis("threadIdx.x"))
-    s[bgemm].reorder(bgemm_scope, b, by, bx, vy, vx, ty, tx, cb)
+    #s[bgemm].reorder(bgemm_scope, b, by, bx, vy, vx, ty, tx, cb)
+    #s[bgemm].reorder(bgemm_scope, b, by, bx, ty, tx, cb)
+    s[bgemm].reorder(by, bx, vx, ty, tx, cb)
     s[bgemm].vectorize(cb)
     s[bgemm].set_scope(get_texture_storage(bgemm.shape))
 
@@ -371,6 +390,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     b = s[OL].fuse(b1, b2)
     #rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
     #s[OL].reorder(rco, rci, rcb, b, y, x, cb)
+    s[OL].reorder(b, y, x, rcc, rcb, cb)
+    s[OL].unroll(rcb)
     s[OL].vectorize(cb)
 
     s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
