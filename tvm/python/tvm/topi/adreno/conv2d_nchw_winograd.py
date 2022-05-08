@@ -193,14 +193,21 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     idxmod = tvm.tir.indexmod
     N, CI, H, W, CB = get_const_tuple(data.shape)
 
+    # pack input tile
+    input_tile = te.compute(
+        (alpha, alpha, CI, P, CB),
+        lambda eps, nu, c, p, cb: data_pad[idxdiv(p, (nH * nW))][c][idxmod(idxdiv(p, nW), nH) * m + eps][idxmod(p, nW) * m + nu][cb],
+        name="d",
+    )
+
     # transform data
     r_a = te.reduce_axis((0, alpha), "r_a")
     r_b = te.reduce_axis((0, alpha), "r_a")
     data_pack = te.compute(
         (alpha, alpha, CI, P, CB),
         lambda eps, nu, ci, p, cb: te.sum(
-            data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
-            #input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            #data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            input_tile[r_a][r_b][ci][p][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
     )
@@ -263,7 +270,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     inverse = s[output].op.input_tensors[0]
     bgemm, A = s[inverse].op.input_tensors
     kernel_pack, data_pack = s[bgemm].op.input_tensors
-    pad_data, B = s[data_pack].op.input_tensors
+    input_tile, B = s[data_pack].op.input_tensors
+    pad_data = s[input_tile].op.input_tensors[0]
 
     # data transform
     s[B].compute_inline()
@@ -272,25 +280,46 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     # probably will improve real topology execution
     if autotvm.GLOBAL_SCOPE.in_tuning:
         # Padding to texture
-        AA = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [data_pack])
+        AA = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [input_tile])
         bind_data_copy(s[AA])
 
     # Precalculate matrix
     BM = s.cache_read(B, "global", [data_pack])
     bind_data_copy(s[BM])
 
+    eps, nu, ci, p, cb = s[input_tile].op.axis
+    fused = s[input_tile].fuse(eps, nu)
+    cfg.define_split("input_tile_ci", ci, num_outputs=2, filter=lambda entry: entry.size[1] <= 8)
+    cfg.define_split("input_tile_p", p, num_outputs=2, filter=lambda entry: entry.size[1] >= 4 and entry.size[1] <= 16)
+    cfg.define_split("input_tile_alpha", eps, num_outputs=2, filter=lambda entry: entry.size[1] == 1 or entry.size[1] == input_tile.shape[0])
+    # TODO: add multi_filter for stage
+    #cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
+    bx, tx = cfg["input_tile_p"].apply(s, input_tile, p)
+    by, ty = cfg["input_tile_ci"].apply(s, input_tile, ci)
+    bz, tz = cfg["input_tile_alpha"].apply(s, input_tile, fused)
+    #bz, tz = eps, nu
+    s[input_tile].reorder(bx, by, bz, tx, ty, tz, cb)
+    s[input_tile].vectorize(cb)
+    s[input_tile].bind(bx, te.thread_axis("blockIdx.x"))
+    s[input_tile].bind(tx, te.thread_axis("threadIdx.x"))
+    s[input_tile].bind(by, te.thread_axis("blockIdx.y"))
+    s[input_tile].bind(ty, te.thread_axis("threadIdx.y"))
+    s[input_tile].bind(bz, te.thread_axis("blockIdx.z"))
+    s[input_tile].bind(tz, te.thread_axis("threadIdx.z"))
+    s[input_tile].set_scope(get_texture_storage(input_tile.shape))
+
     OL = s.cache_write(data_pack, "local")
     eps, nu, c, p, cb = s[data_pack].op.axis
-    s[data_pack].reorder(eps, c, nu, p, cb)
-    f1 = s[data_pack].fuse(eps, c)
-    f2 = s[data_pack].fuse(nu, p)
+    #s[data_pack].reorder(eps, c, nu, p, cb)
+    #f1 = s[data_pack].fuse(eps, c)
+    #f2 = s[data_pack].fuse(nu, p)
     #cfg.define_split("tile_data_x", f2, num_outputs=3, filter=lambda entry: entry.size[2] <= 16 and entry.size[1] == 4)
     #p, pi = s[data_pack].split(p, 1)
-    by, ty = s[data_pack].split(f1, 64)
+    #by, ty = s[data_pack].split(f1, 64)
     #bx, vx, tx = cfg["tile_data_x"].apply(s, data_pack, f2)
-    bx, tx = s[data_pack].split(f2, 16)
-    #bx, tx = p, nu
-    #by, ty = c, eps
+    #bx, tx = s[data_pack].split(f2, 16)
+    bx, tx = p, nu
+    by, ty = c, eps
     s[data_pack].reorder(by, bx, ty, tx, cb)
     #s[data_pack].reorder(bx, by, tx, ty, pi, cb)
     s[data_pack].vectorize(cb)
@@ -302,6 +331,9 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     eps, nu, c, p, cb = s[OL].op.axis
     r_a, r_b = s[OL].op.reduce_axis
     s[OL].reorder(eps, nu, c, p, r_a, r_b, cb)
+    #s[OL].unroll(r_b)
+    #s[OL].unroll(r_a)
+    s[OL].unroll(r_b)
     s[OL].vectorize(cb)
     s[OL].compute_at(s[data_pack], tx)
     s[data_pack].set_scope(get_texture_storage(data_pack.shape))
