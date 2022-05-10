@@ -372,16 +372,16 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[pad_data].compute_inline()
 
     ##### space definition begin #####
-    cfg.define_knob("auto_unroll_max_step", [0, 128, 1500])
-    cfg.define_knob("unroll_explicit", [0, 1])
+    #cfg.define_knob("auto_unroll_max_step", [0, 128, 1500])
+    #cfg.define_knob("unroll_explicit", [0, 1])
     b1, b2, y, x, cb = s[bgemm].op.axis
     rcc = s[bgemm].op.reduce_axis[0]
     alpha = get_const_int(b1.dom.extent)
 
-    #cfg.define_split("tile_y", y, num_outputs=3, filter=lambda entry: entry.size[2] <= 32 and entry.size[1] <= 8)
-    cfg.define_split("tile_x", x, num_outputs=3, filter=lambda entry: entry.size[2] <= 16 and entry.size[1] >= 4 and entry.size[1] <= 8)
+    cfg.define_split("tile_y", y, num_outputs=3, filter=lambda entry: entry.size[2] <= 64 and entry.size[1] <= 8)
+    cfg.define_split("tile_x", x, num_outputs=3, filter=lambda entry: entry.size[2] <= 64 and entry.size[1] >= 4 and entry.size[1] <= 8)
     cfg.define_split("tile_rc", rcc, num_outputs=2)
-    #cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
+    cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
     ##### space definition end #####
 
     # batch gemm
@@ -395,23 +395,23 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     # tile and bind spatial axes
     bgemm_scope, by = s[bgemm].split(by, nparts=1)
-    #by, vy, ty = cfg["tile_y"].apply(s, bgemm, y)
+    by, vy, ty = cfg["tile_y"].apply(s, bgemm, by)
     bx, vx, tx = cfg["tile_x"].apply(s, bgemm, x)
     #bx = x
     #bx, vx = s[bgemm].split(x, 4)
     #bx, tx = s[bgemm].split(bx, 16)
-    by, ty = s[bgemm].split(by, 64)
+    #by, ty = s[bgemm].split(by, 64)
     #bx, tx = s[bgemm].split(x, bgemm.shape[2] // 64)
     #s[bgemm].bind(b, te.thread_axis("blockIdx.z"))
     s[bgemm].bind(by, te.thread_axis("blockIdx.y"))
     s[bgemm].bind(bx, te.thread_axis("blockIdx.x"))
-    #s[bgemm].bind(vy, te.thread_axis("vthread"))
+    s[bgemm].bind(vy, te.thread_axis("vthread"))
     s[bgemm].bind(vx, te.thread_axis("vthread"))
     s[bgemm].bind(ty, te.thread_axis("threadIdx.y"))
     s[bgemm].bind(tx, te.thread_axis("threadIdx.x"))
     #s[bgemm].reorder(bgemm_scope, b, by, bx, vy, vx, ty, tx, cb)
     #s[bgemm].reorder(bgemm_scope, b, by, bx, ty, tx, cb)
-    s[bgemm].reorder(by, bx, vx, ty, tx, cb)
+    s[bgemm].reorder(bgemm_scope, by, bx, vy, vx, ty, tx, cb)
     s[bgemm].vectorize(cb)
     s[bgemm].set_scope(get_texture_storage(bgemm.shape))
 
@@ -426,8 +426,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[OL].unroll(rcb)
     s[OL].vectorize(cb)
 
-    s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
-    s[bgemm].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
+    #s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
+    #s[bgemm].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
 
     # schedule inverse, output and fusion
     if output.op in s.outputs:
