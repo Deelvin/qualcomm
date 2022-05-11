@@ -195,8 +195,10 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
 
     # pack input tile
     input_tile = te.compute(
-        (alpha, alpha, CI, P, CB),
-        lambda eps, nu, c, p, cb: data_pad[idxdiv(p, (nH * nW))][c][idxmod(idxdiv(p, nW), nH) * m + eps][idxmod(p, nW) * m + nu][cb],
+        #(alpha, alpha, P, CI, CB),
+        (P, CI, alpha, alpha, CB),
+        #lambda eps, nu, p, c, cb: data_pad[idxdiv(p, (nH * nW))][c][idxmod(idxdiv(p, nW), nH) * m + eps][idxmod(p, nW) * m + nu][cb],
+        lambda p, c, eps, nu, cb: data_pad[idxdiv(p, (nH * nW))][c][idxmod(idxdiv(p, nW), nH) * m + eps][idxmod(p, nW) * m + nu][cb],
         name="d",
     )
 
@@ -204,10 +206,15 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     r_a = te.reduce_axis((0, alpha), "r_a")
     r_b = te.reduce_axis((0, alpha), "r_a")
     data_pack = te.compute(
-        (CI, P, alpha, alpha, CB),
-        lambda ci, p, eps, nu, cb: te.sum(
+        #(P, CI, alpha, alpha, CB),
+        #lambda p, ci, eps, nu, cb: te.sum(
+        (P, CI, alpha, alpha, CB),
+        lambda p, ci, eps, nu, cb: te.sum(
+        #(alpha, alpha, CI, P, CB),
+        #lambda eps, nu, ci, p, cb: te.sum(
             #data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
-            input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            #input_tile[r_a][r_b][p][ci][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            input_tile[p][ci][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
     )
@@ -218,8 +225,9 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
-            (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
-            #kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
+            #(kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[p][ci][eps][nu][cb]).astype(args["accumulator"]), axis=[ci, cb]
+            (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[p][ci][eps][nu][cb]).astype(args["accumulator"]), axis=[ci, cb]
+            #(kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
         ),
         name="bgemm",
     )
@@ -324,6 +332,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     #s[data_pack].bind(ty, te.thread_axis("threadIdx.y"))
     fused = s[data_pack].fuse(c, p, eps, nu)
     bx, tx = s[data_pack].split(fused, 128)
+    s[data_pack].vectorize(cb)
     s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
 
