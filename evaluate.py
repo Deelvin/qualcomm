@@ -25,6 +25,21 @@ from tvm import autotvm
 from tvm.contrib import utils, ndk
 from tvm.topi import testing
 
+# DEELVIN-207
+# from tvm.relay.op import register_mixed_precision_conversion
+# Pick a priority > 10 to overwrite defaults, higher priorities take precedence
+# @register_mixed_precision_conversion("nn.conv2d", level=11)
+# def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: str):
+#     return [
+#         # always do main calculation in mixed_precision_type
+#         relay.transform.mixed_precision.MIXED_PRECISION_ALWAYS,
+#         # the dtype for the accumulator
+#         "float32",
+#         # the output dtype for the operation (usually fp16)
+#         mixed_precision_type,
+#     ]
+
+
 
 class ModelImporter(object):
     def available_models(self):
@@ -152,6 +167,11 @@ class ModelImporter(object):
         model = onnx.load(onnx_model_file)
         shape_dict = {'input:0': [1, 224, 224, 3]}
         mod, params = relay.frontend.from_onnx(model, shape_dict, freeze_params=True)
+
+        # DEELVIN-207
+        # mod = relay.transform.InferType()(mod)
+        # mod = relay.transform.ToMixedPrecision()(mod)
+        # print(mod)
 
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
@@ -780,14 +800,13 @@ class Executor(object):
             self._connect_tracker()
 
         with relay.build_config(opt_level=3):
-            # print("Relay model to compile:\n")
-            # print(tvm_mod)
             graph, lib, params = relay.build(
                 tvm_mod, target_host=target_host, target=target, params=params
             )
-            lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
-            lib2.export_library("_model.so", ndk.create_shared)
-
+            # TODO(amalyshe): export library. conflicts with previous compilation since parameters
+            # on the next line are not original parameters. Need to fix
+            #lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
+            #lib2.export_library("_model.so", ndk.create_shared)
             # print("JSON:\n", graph)
 
         if self.remote:
