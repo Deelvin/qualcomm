@@ -241,33 +241,10 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["ResizeBilinear_2"])
 
-
-
-        # import tensorflow as tf
-        # try:
-        #     tf_compat_v1 = tf.compat.v1
-        # except ImportError:
-        #     tf_compat_v1 = tf
-        # # Tensorflow utility functions
-        # import tvm.relay.testing.tf as tf_testing
-
-        # model_path = os.path.abspath(
-        #     os.path.dirname(os.path.realpath(__file__))
-        #     + "/../models/mace_deeplabv3/deeplab-v3-plus-mobilenet-v2.pb"
-        # )
-
-        # with tf_compat_v1.gfile.GFile(model_path, "rb") as f:
-        #     graph_def = tf_compat_v1.GraphDef()
-        #     graph_def.ParseFromString(f.read())
-        #     #graph = tf.import_graph_def(graph_def, name="")
-        #     # Call the utility to import the graph definition into default graph.
-        #     graph_def = tf_testing.ProcessGraphDefParam(graph_def)
-
-        # input_shape = {"sub_7": (1, 513, 513, 3)}
-        # mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape)
-
-        from tvm.relay import transform
-        #mod = transform.DynamicToStatic()(mod)
+        # TODO(amalyshe): There must not be below line since it is expected to call
+        # FlattenAtrousConv withing standard optimization tvm passes.
+        # something went wrong
+        mod = tvm.relay.transform.FlattenAtrousConv()(mod)
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
         if dtype == "float16":
@@ -852,7 +829,7 @@ class Executor(object):
             m.run()
             time_f = m.module.time_evaluator("run", ctx, number=num_iter)
         else:
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter*10)
+            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
         cost = time_f().mean
         print("%g secs/iteration\n" % cost)
 
