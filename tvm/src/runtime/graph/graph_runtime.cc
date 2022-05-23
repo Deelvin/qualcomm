@@ -511,7 +511,7 @@ PackedFunc GraphRuntime::GetFunction(const std::string& name,
   } else if (name == "get_num_inputs") {
     return PackedFunc(
         [sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { *rv = this->NumInputs(); });
-  } else if (name == "run") {
+  } else if (name == "run") { // ICE
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { this->Run(); });
   } else if (name == "load_params") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {

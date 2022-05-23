@@ -1055,7 +1055,7 @@ def _timed_rpc_run(
         # the PackedFunc as an object. Currently, we pass function name to work
         # around it.
         f_prepare = "cache_flush_cpu_non_first_arg" if enable_cpu_cache_flush else ""
-        time_f = func.time_evaluator(
+        time_f = func.time_evaluator( # ICE
             func.entry_name,
             ctx,
             number=number,

@@ -322,7 +322,7 @@ endif()
 
 if(USE_PROFILER)
   message(STATUS "Build with profiler...")
-
+  add_definitions(-DUSE_PROFILER=1)
   file(GLOB RUNTIME_GRAPH_DEBUG_SRCS src/runtime/graph/debug/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_GRAPH_DEBUG_SRCS})
   set_source_files_properties(${RUNTIME_GRAPH_SRCS}

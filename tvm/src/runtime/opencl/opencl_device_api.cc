@@ -282,7 +282,7 @@ void OpenCLWorkspace::CopyDataFromTo(const void* from, size_t from_offset, void*
 
 void OpenCLWorkspace::StreamSync(TVMContext ctx, TVMStreamHandle stream) {
   ICHECK(stream == nullptr);
-  OPENCL_CALL(clFinish(this->GetQueue(ctx)));
+  OPENCL_CALL(clFinish(this->GetQueue(ctx))); // ICE
 }
 
 void* OpenCLWorkspace::AllocWorkspace(TVMContext ctx, size_t size, DLDataType type_hint) {
@@ -317,9 +317,9 @@ std::string GetDeviceInfo(cl_device_id pid, cl_device_info param_name) {
 
 std::vector<cl_platform_id> GetPlatformIDs() {
   cl_uint ret_size;
-  cl_int code = clGetPlatformIDs(0, nullptr, &ret_size);
+  OPENCL_CALL(clGetPlatformIDs(0, nullptr, &ret_size));
+  // if (code != CL_SUCCESS) return {};
   std::vector<cl_platform_id> ret;
-  if (code != CL_SUCCESS) return ret;
   ret.resize(ret_size);
   OPENCL_CALL(clGetPlatformIDs(ret_size, &ret[0], nullptr));
   return ret;
@@ -346,7 +346,7 @@ bool MatchPlatformInfo(cl_platform_id pid, cl_platform_info param_name, std::str
 }
 
 void OpenCLWorkspace::Init(const std::string& type_key, const std::string& device_type,
-                           const std::string& platform_name) {
+                           const std::string& platform_name) { // ICE
   if (initialized_) return;
   std::lock_guard<std::mutex> lock(this->mu);
   if (initialized_) return;
@@ -387,9 +387,16 @@ void OpenCLWorkspace::Init(const std::string& type_key, const std::string& devic
   ICHECK_EQ(this->queues.size(), 0U);
   for (size_t i = 0; i < this->devices.size(); ++i) {
     cl_device_id did = this->devices[i];
+#ifdef USE_PROFILER
+    this->queues.push_back(
+        clCreateCommandQueue(this->context, did, CL_QUEUE_PROFILING_ENABLE, &err_code));
+#else
     this->queues.push_back(clCreateCommandQueue(this->context, did, 0, &err_code));
+#endif
+    // this->queues.push_back(clCreateCommandQueue(this->context, did, 0, &err_code));
     OPENCL_CHECK_ERROR(err_code);
   }
+  this->events.resize(this->devices.size());
   initialized_ = true;
 }
 
@@ -433,6 +440,14 @@ TVM_REGISTER_GLOBAL("device_api.opencl").set_body([](TVMArgs args, TVMRetValue* 
   DeviceAPI* ptr = OpenCLWorkspace::Global();
   *rv = static_cast<void*>(ptr);
 });
+
+#ifdef USE_PROFILER
+TVM_REGISTER_OBJECT_TYPE(OpenCLTimerNode);
+
+TVM_REGISTER_GLOBAL("profiling.timer.opencl").set_body_typed([](TVMContext dev) {
+  return Timer(make_object<OpenCLTimerNode>(dev));
+});
+#endif
 
 }  // namespace cl
 }  // namespace runtime

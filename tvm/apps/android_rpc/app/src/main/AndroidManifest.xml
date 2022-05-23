@@ -50,6 +50,7 @@ under the License.
             android:theme="@style/AppTheme.NoActionBar"
             android:screenOrientation="portrait">
         </activity>
+        <profileable android:shell="true"/>
     </application>
 
 </manifest>

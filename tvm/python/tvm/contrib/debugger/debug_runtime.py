@@ -169,13 +169,24 @@ class GraphModuleDebug(graph_runtime.GraphModule):
         # init the debug dumping environment
         self.debug_datum = debug_result.DebugResult(graph_json, self._dump_path)
 
-    def _run_debug(self):
+    def _run_debug(self, number, run_delay):
         """Execute the node specified with index will be executed.
         Each debug output will be copied to the buffer
         Time consumed for each execution will be set as debug output.
 
         """
-        self.debug_datum._time_list = [[float(t)] for t in self.run_individual(10, 1, 1)]
+        my_data = self.run_individual(number, run_delay, 1, 1)
+        # my_data = self.run_individual(10, 1, 1)
+        # print("_run_debug", my_data)
+        # data = [[float(t)] for t in my_data]
+        d = []
+        for i in my_data:
+            d.append([])
+            for j in i.strip(";").split(";"):
+                d[-1].append(float(j))
+                
+        self.debug_datum._time_list = d
+        # self.debug_datum._time_list = [[float(t)] for t in my_data]
         for i, node in enumerate(self.debug_datum.get_graph_nodes()):
             num_outputs = self.debug_datum.get_graph_node_output_num(node)
             for j in range(num_outputs):
@@ -210,7 +221,7 @@ class GraphModuleDebug(graph_runtime.GraphModule):
             raise RuntimeError("Require node index or name only.")
         return out
 
-    def run(self, **input_dict):
+    def run(self, number=10, run_delay=0, **input_dict, ):
         """Run forward execution of the graph with debug
 
         Parameters
@@ -222,7 +233,7 @@ class GraphModuleDebug(graph_runtime.GraphModule):
             self.set_input(**input_dict)
 
         # Step 1. Execute the graph
-        self._run_debug()
+        self._run_debug(number, run_delay)
         # Step 2. Dump the output tensors to the dump folder
         self.debug_datum.dump_output_tensor()
         # Step 3. Dump the Chrome trace to the dump folder
@@ -230,8 +241,9 @@ class GraphModuleDebug(graph_runtime.GraphModule):
         # Step 4. Display the collected information
         self.debug_datum.display_debug_result()
 
-    def run_individual(self, number, repeat=1, min_repeat_ms=0):
-        ret = self._run_individual(number, repeat, min_repeat_ms)
+    def run_individual(self, number, run_delay=0, repeat=1, min_repeat_ms=0):
+        ret = self._run_individual(number, run_delay, repeat, min_repeat_ms)
+        # print("run_individual", ret)
         return ret.strip(",").split(",") if ret else []
 
     def exit(self):

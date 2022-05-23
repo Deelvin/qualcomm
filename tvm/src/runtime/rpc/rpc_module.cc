@@ -25,7 +25,9 @@
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/profiling.h>
 #include <tvm/runtime/registry.h>
-
+#include <iostream>
+#include <chrono>
+#include <thread>
 #include <cstring>
 #include <memory>
 #if defined(_M_X64) || defined(__x86_64__)
@@ -34,6 +36,7 @@
 
 #include "rpc_endpoint.h"
 #include "rpc_session.h"
+// #include "../opencl/opencl_common.h"
 
 namespace tvm {
 namespace runtime {
@@ -188,8 +191,9 @@ class RPCModuleNode final : public ModuleNode {
     return "";
   }
 
-  PackedFunc GetTimeEvaluator(const std::string& name, TVMContext ctx, int number, int repeat,
+  PackedFunc GetTimeEvaluator(const std::string& name, TVMContext ctx, int number, int repeat, int run_delay,
                               int min_repeat_ms, const std::string& f_preproc_name) {
+    std::cout << "GetTimeEvaluator" << std::endl;
     InitRemoteFunc(&remote_get_time_evaluator_, "runtime.RPCTimeEvaluator");
     // Remove session mask because we pass ctx by parts.
     ICHECK_EQ(GetRPCSessionIndex(ctx), sess_->table_index())
@@ -199,11 +203,11 @@ class RPCModuleNode final : public ModuleNode {
     if (module_handle_ != nullptr) {
       return remote_get_time_evaluator_(GetRef<Module>(this), name,
                                         static_cast<int>(ctx.device_type), ctx.device_id, number,
-                                        repeat, min_repeat_ms, f_preproc_name);
+                                        repeat, run_delay, min_repeat_ms, f_preproc_name);
     } else {
       return remote_get_time_evaluator_(Optional<Module>(nullptr), name,
                                         static_cast<int>(ctx.device_type), ctx.device_id, number,
-                                        repeat, min_repeat_ms, f_preproc_name);
+                                        repeat, run_delay, min_repeat_ms, f_preproc_name);
     }
   }
 
@@ -241,7 +245,7 @@ class RPCModuleNode final : public ModuleNode {
   // The local channel
   std::shared_ptr<RPCSession> sess_;
   // remote function to get time evaluator
-  TypedPackedFunc<PackedFunc(Optional<Module>, std::string, int, int, int, int, int, std::string)>
+  TypedPackedFunc<PackedFunc(Optional<Module>, std::string, int, int, int, int, int, int, std::string)>
       remote_get_time_evaluator_;
   // remote function getter for modules.
   TypedPackedFunc<PackedFunc(Module, std::string, bool)> remote_mod_get_function_;
@@ -342,7 +346,7 @@ inline void CPUCacheFlush(int begin_index, const TVMArgs& args) {
   }
 }
 
-PackedFunc WrapTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repeat,
+PackedFunc WrapTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repeat, int run_delay,
                              int min_repeat_ms, PackedFunc f_preproc) {
   ICHECK(pf != nullptr);
 
@@ -352,39 +356,93 @@ PackedFunc WrapTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repe
     return (*get_micro_time_evaluator)(pf, ctx, number, repeat);
   }
 
-  auto ftimer = [pf, ctx, number, repeat, min_repeat_ms, f_preproc](TVMArgs args,
+  auto ftimer = [pf, ctx, number, repeat, run_delay, min_repeat_ms, f_preproc](TVMArgs args,
                                                                     TVMRetValue* rv) mutable {
+    // uint32_t milliseconds = 100;
     TVMRetValue temp;
     std::ostringstream os;
     // skip first time call, to activate lazy compilation components.
     pf.CallPacked(args, &temp);
 
     DeviceAPI::Get(ctx)->StreamSync(ctx, nullptr);
-
-    for (int i = 0; i < repeat; ++i) {
+    for (int j = 0; j < repeat; ++j) {
       if (f_preproc != nullptr) {
         f_preproc.CallPacked(args, &temp);
       }
       double duration_ms = 0.0;
+      double sum_duration_ms = 0.0;
+      std::vector<double> results;
 
       do {
-        if (duration_ms > 0.0) {
-          number = static_cast<int>(std::max((min_repeat_ms / (duration_ms / number) + 1),
+        if (sum_duration_ms > 0.0) {
+          number = static_cast<int>(std::max((min_repeat_ms / (sum_duration_ms / number) + 1),
                                              number * 1.618));  // 1.618 is chosen by random
         }
+        results.clear();
+        results.resize(number);
 
-        Timer t = Timer::Start(ctx);
+        // Timer t = Timer::Start(ctx);
         // start timing
         for (int i = 0; i < number; ++i) {
-          pf.CallPacked(args, &temp);
-        }
-        t->Stop();
-        int64_t t_nanos = t->SyncAndGetElapsedNanos();
-        duration_ms = t_nanos / 1e6;
-      } while (duration_ms < min_repeat_ms);
+          // DeviceAPI::Get(ctx)->StreamSync(ctx, nullptr);
 
-      double speed = duration_ms / 1e3 / number;
-      os.write(reinterpret_cast<char*>(&speed), sizeof(speed));
+          Timer t = Timer::Start(ctx);
+          // OpenCLTimerNode t(ctx);
+          // t.Start();
+          pf.CallPacked(args, &temp);
+
+          // t.Stop();
+          t->Stop();
+          // std::this_thread::sleep_for(std::chrono::milliseconds(run_delay));
+          // int64_t t_nanos = t.SyncAndGetElapsedNanos();
+          int64_t t_nanos = t->SyncAndGetElapsedNanos();
+          duration_ms = t_nanos / 1e6;
+          results[i] = duration_ms;
+          sum_duration_ms += duration_ms;
+          // std::chrono::milliseconds d (500);
+          // std::this_thread::sleep_for(d);
+        }
+        // t->Stop();
+        // int64_t t_nanos = t->SyncAndGetElapsedNanos();
+        // duration_ms = t_nanos / 1e6;
+        
+      } while (sum_duration_ms < min_repeat_ms);
+      
+
+
+      // double speed = sum_duration_ms / 1e3 / number;
+      // os.write(reinterpret_cast<char*>(&speed), sizeof(speed));
+      // std::string ss(99, '\n');
+      // {
+      // auto f = Registry::Get(std::string("profiling.timer.") + DeviceName(ctx.device_type));
+      // // Timer t = Timer::Start(ctx);
+      // if (f == nullptr) {
+      //   Timer t = DefaultTimer(ctx);
+      //   t->Start();
+      //   std::string ss2 = "DefaultTimer";
+      //   // std::string ss2 = DeviceName(ctx.device_type);
+      //   for(size_t i = 0; i < ss2.size(); ++i)
+      //     ss[i] = ss2[i];
+      //   t->Stop();
+      // } else {
+      //   Timer t = f->operator()(ctx);
+      //   t->Start();
+      //   std::string ss2 = "NoDefault";
+      //   // std::string ss2 = DeviceName(ctx.device_type);
+      //   for(size_t i = 0; i < ss2.size(); ++i)
+      //     ss[i] = ss2[i];
+      //   t->Stop();
+      // }
+
+      // }
+      // os.write(ss.c_str(), 100);
+      int64_t size = results.size(); // number?
+      os.write(reinterpret_cast<char*>(&size), sizeof(size));
+      for (int i = 0; i < number; ++i) {
+          os.write(reinterpret_cast<char*>(&results[i]), sizeof(results[i]));
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(run_delay));
     }
 
     std::string blob = os.str();
@@ -399,7 +457,7 @@ PackedFunc WrapTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repe
 
 TVM_REGISTER_GLOBAL("runtime.RPCTimeEvaluator")
     .set_body_typed([](Optional<Module> opt_mod, std::string name, int device_type, int device_id,
-                       int number, int repeat, int min_repeat_ms, std::string f_preproc_name) {
+                       int number, int repeat, int run_delay,int min_repeat_ms, std::string f_preproc_name) {
       TVMContext ctx;
       ctx.device_type = static_cast<DLDeviceType>(device_type);
       ctx.device_id = device_id;
@@ -408,7 +466,7 @@ TVM_REGISTER_GLOBAL("runtime.RPCTimeEvaluator")
         std::string tkey = m->type_key();
         if (tkey == "rpc") {
           return static_cast<RPCModuleNode*>(m.operator->())
-              ->GetTimeEvaluator(name, ctx, number, repeat, min_repeat_ms, f_preproc_name);
+              ->GetTimeEvaluator(name, ctx, number, repeat, run_delay, min_repeat_ms, f_preproc_name);
         } else {
           PackedFunc f_preproc;
           if (!f_preproc_name.empty()) {
@@ -417,7 +475,7 @@ TVM_REGISTER_GLOBAL("runtime.RPCTimeEvaluator")
                 << "Cannot find " << f_preproc_name << " in the global function";
             f_preproc = *pf_preproc;
           }
-          return WrapTimeEvaluator(m.GetFunction(name, false), ctx, number, repeat, min_repeat_ms,
+          return WrapTimeEvaluator(m.GetFunction(name, false), ctx, number, repeat, run_delay, min_repeat_ms,
                                    f_preproc);
         }
       } else {
@@ -430,7 +488,7 @@ TVM_REGISTER_GLOBAL("runtime.RPCTimeEvaluator")
               << "Cannot find " << f_preproc_name << " in the global function";
           f_preproc = *pf_preproc;
         }
-        return WrapTimeEvaluator(*pf, ctx, number, repeat, min_repeat_ms, f_preproc);
+        return WrapTimeEvaluator(*pf, ctx, number, repeat, run_delay, min_repeat_ms, f_preproc);
       }
     });
 

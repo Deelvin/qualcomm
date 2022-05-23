@@ -21,6 +21,8 @@ import os
 import ctypes
 import struct
 from collections import namedtuple
+from typing import Sequence
+import numpy as np
 
 import tvm._ffi
 from tvm._ffi.base import _LIB, check_call, c_str, string_types, _RUNTIME_ONLY
@@ -32,6 +34,73 @@ from . import _ffi_api
 
 # profile result of time evaluator
 ProfileResult = namedtuple("ProfileResult", ["mean", "results"])
+
+
+
+class BenchmarkResult:
+    """Runtimes from benchmarking"""
+
+    def __init__(self, results: Sequence[float]):
+        """Construct a new BenchmarkResult from a sequence of runtimes.
+
+        Parameters
+        ----------
+        results : Sequence[float]
+            Raw times from benchmarking
+
+        Attributes
+        ----------
+        min : float
+            Minimum runtime in seconds of all results.
+        mean : float
+            Mean runtime in seconds of all results. If py:meth:`Module.time_evaluator` or
+            `benchmark` is called with `number` > 0, then each result is already the mean of a
+            `number` of runtimes, so this becomes the mean of means.
+        median : float
+            Median runtime in seconds of all results. If py:meth:`Module.time_evaluator` is called
+            with `number` > 0, then each result is already the mean of a `number` of runtimes, so
+            this becomes the median of means.
+        max : float
+            Maximum runtime in seconds of all results. If py:meth:`Module.time_evaluator` is called
+            with `number` > 0, then each result is already the mean of a `number` of runtimes, so
+            this becomes the maximum of those means.
+        std : float
+            Standard deviation in seconds of runtimes. If py:meth:`Module.time_evaluator` is called
+            with `number` > 0, then each result is already the mean of a `number` of runtimes, so
+            this becomes the standard deviation of means.
+        results : Sequence[float]
+            The collected runtimes (in seconds). This may be a series of mean runtimes if
+            py:meth:`Module.time_evaluator` or `benchmark` was run with `number` > 1.
+        """
+        self.results = results
+        self.mean = np.mean(self.results)
+        self.std = np.std(self.results)
+        self.median = np.median(self.results)
+        self.min = np.min(self.results)
+        self.max = np.max(self.results)
+
+    def __repr__(self):
+        return "BenchmarkResult(min={}, mean={}, median={}, max={}, std={}, results={})".format(
+            self.min, self.mean, self.median, self.max, self.std, self.results
+        )
+
+    def __str__(self):
+        return """Execution time summary:
+{:^12} {:^12} {:^12} {:^12} {:^12}
+{:^12.4f} {:^12.4f} {:^12.4f} {:^12.4f} {:^12.4f}
+               """.format(
+            "mean (ms)",
+            "median (ms)",
+            "max (ms)",
+            "min (ms)",
+            "std (ms)",
+            self.mean * 1000,
+            self.median * 1000,
+            self.max * 1000,
+            self.min * 1000,
+            self.std * 1000,
+        )
+
 
 
 class Module(object):
@@ -168,7 +237,7 @@ class Module(object):
         """
         _ffi_api.ModuleSaveToFile(self, file_name, fmt)
 
-    def time_evaluator(self, func_name, ctx, number=10, repeat=1, min_repeat_ms=0, f_preproc=""):
+    def time_evaluator(self, func_name, ctx, number=10, repeat=1, run_delay=0, min_repeat_ms=0, f_preproc=""):
         """Get an evaluator that measures time cost of running function.
 
         Parameters
@@ -189,6 +258,9 @@ class Module(object):
             where the first one is warm up and will be discarded.
             The returned result contains `repeat` costs,
             each of which is an average of `number` costs.
+
+        run_delay: int, optional
+            The number delay between runs in milliseconds
 
         min_repeat_ms: int, optional
             The minimum duration of one `repeat` in milliseconds.
@@ -219,18 +291,44 @@ class Module(object):
                 ctx.device_id,
                 number,
                 repeat,
+                run_delay,
                 min_repeat_ms,
                 f_preproc,
             )
-
+            detailed = True
             def evaluator(*args):
                 """Internal wrapped evaluator."""
                 # Wrap feval so we can add more stats in future.
+                # print("time_evaluator", func_name)
+                # blob = feval(*args)
+                # fmt = "@" +("d" * number)
+                # # fmt = "@" + ("c"*100) +("d" * number)
+                # print("blob\n", repr(blob))
+                # results = struct.unpack(fmt, blob)
+                # print("results\n", results)
+                # mean = sum(results) / float(number)
+                # return ProfileResult(mean=mean, results=results)
+
                 blob = feval(*args)
-                fmt = "@" + ("d" * repeat)
-                results = struct.unpack(fmt, blob)
-                mean = sum(results) / float(repeat)
-                return ProfileResult(mean=mean, results=results)
+                # print("blob\n", blob)
+                if detailed:
+                    results = []
+                    offset = 0
+                    format_size = '@q'
+                    for _ in range(0, repeat):
+                        n, = struct.unpack_from(format_size, blob, offset)
+                        print(n)
+                        offset += struct.calcsize(format_size)
+                        format_data = '@' + n * 'd'
+                        [*r] = [struct.unpack_from(format_data, blob, offset)]
+                        offset += struct.calcsize(format_data)
+                        rb = BenchmarkResult(r)
+                        print(str(rb))
+                        results.append(rb.mean)
+                    return BenchmarkResult(results)
+                else:
+                    fmt = "@" + ("d" * repeat)
+                    results = struct.unpack(fmt, blob)
 
             return evaluator
         except NameError:

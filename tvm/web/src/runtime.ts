@@ -1062,6 +1062,7 @@ export class Instance implements Disposable {
       ctx: DLContext,
       nstep: number,
       repeat: number,
+      run_delay: number,
       minRepeatMs: number
     ): Promise<Uint8Array> => {
       finvoke(this.scalar(1, "int32"));
@@ -1081,6 +1082,7 @@ export class Instance implements Disposable {
           finvoke(this.scalar(setupNumber, "int32"));
           await ctx.sync();
           const tend: number = perf.now();
+          // ice sleep(run_delay)
 
           durationMs = tend - tstart;
         } while (durationMs < minRepeatMs);

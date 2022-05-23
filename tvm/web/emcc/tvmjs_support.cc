@@ -161,7 +161,7 @@ class AsyncLocalSession : public LocalSession {
       try {
         TVMArgs args(arg_values, arg_type_codes, num_args);
         PackedFunc retfunc =
-            this->GetTimeEvaluator(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+            this->GetTimeEvaluator(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
         TVMRetValue rv;
         rv = retfunc;
         this->EncodeReturn(std::move(rv), [&](TVMArgs encoded_args) {
@@ -243,7 +243,7 @@ class AsyncLocalSession : public LocalSession {
 
   // time evaluator
   PackedFunc GetTimeEvaluator(Optional<Module> opt_mod, std::string name, int device_type,
-                              int device_id, int number, int repeat, int min_repeat_ms) {
+                              int device_id, int number, int repeat, int run_delay, int min_repeat_ms) {
     TVMContext ctx;
     ctx.device_type = static_cast<DLDeviceType>(device_type);
     ctx.device_id = device_id;
@@ -251,16 +251,16 @@ class AsyncLocalSession : public LocalSession {
     if (opt_mod.defined()) {
       Module m = opt_mod.value();
       std::string tkey = m->type_key();
-      return WrapWasmTimeEvaluator(m.GetFunction(name, false), ctx, number, repeat, min_repeat_ms);
+      return WrapWasmTimeEvaluator(m.GetFunction(name, false), ctx, number, repeat, run_delay, min_repeat_ms);
     } else {
       auto* pf = runtime::Registry::Get(name);
       CHECK(pf != nullptr) << "Cannot find " << name << " in the global function";
-      return WrapWasmTimeEvaluator(*pf, ctx, number, repeat, min_repeat_ms);
+      return WrapWasmTimeEvaluator(*pf, ctx, number, repeat, run_delay, min_repeat_ms);
     }
   }
 
   // time evaluator
-  PackedFunc WrapWasmTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repeat,
+  PackedFunc WrapWasmTimeEvaluator(PackedFunc pf, TVMContext ctx, int number, int repeat, int run_delay,
                                    int min_repeat_ms) {
     auto ftimer = [pf, ctx, number, repeat, min_repeat_ms](TVMArgs args, TVMRetValue* rv) {
       // the function is a async function.
@@ -279,7 +279,7 @@ class AsyncLocalSession : public LocalSession {
       };
       auto* time_exec = runtime::Registry::Get("__async.wasm.TimeExecution");
       CHECK(time_exec != nullptr) << "Cannot find wasm.GetTimer in the global function";
-      (*time_exec)(TypedPackedFunc<void(int)>(finvoke), ctx, number, repeat, min_repeat_ms,
+      (*time_exec)(TypedPackedFunc<void(int)>(finvoke), ctx, number, repeat, run_delay, min_repeat_ms,
                    on_complete);
     };
     return PackedFunc(ftimer);

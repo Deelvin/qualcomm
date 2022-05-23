@@ -50,7 +50,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include <tvm/runtime/profiling.h>
 #include "../file_utils.h"
 #include "../meta_data.h"
 #include "../pack_args.h"
@@ -222,6 +222,8 @@ class OpenCLWorkspace : public DeviceAPI {
   std::vector<cl_device_id> devices;
   // the queues
   std::vector<cl_command_queue> queues;
+    // the events
+  std::vector<std::vector<cl_event>> events;
   // Number of registered kernels
   // Used to register kernel into the workspace.
   size_t num_registered_kernels{0};
@@ -250,6 +252,14 @@ class OpenCLWorkspace : public DeviceAPI {
     ICHECK(ctx.device_id >= 0 && static_cast<size_t>(ctx.device_id) < queues.size())
         << "Invalid OpenCL device_id=" << ctx.device_id;
     return queues[ctx.device_id];
+  }
+    // get the event queue of the context
+  std::vector<cl_event>& GetEventQueue(TVMContext dev) {
+    ICHECK(IsOpenCLDevice(dev));
+    this->Init();
+    ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
+        << "Invalid OpenCL device_id=" << dev.device_id;
+    return events[dev.device_id];
   }
   // override device API
   void SetDevice(TVMContext ctx) final;
@@ -394,6 +404,45 @@ inline cl_mem_object_type GetMemObjectType(const void* mem_ptr) {
   OPENCL_CALL(clGetMemObjectInfo(mem, param_name, sizeof(mem_type), &mem_type, NULL));
   return mem_type;
 }
+
+/*! \brief OpenCL timer node */
+class OpenCLTimerNode : public TimerNode {
+ public:
+  // Timer start
+  virtual void Start() {
+    cl::OpenCLWorkspace::Global()->GetEventQueue(dev_).clear();
+    this->duration = 0;
+  }
+  // Timer stop
+  virtual void Stop() {
+    std::vector<cl_event> evt_queue = cl::OpenCLWorkspace::Global()->GetEventQueue(dev_);
+    cl_ulong start = 0;
+    cl_ulong end = 0;
+    if(!evt_queue.empty()) {
+      OPENCL_CALL(clWaitForEvents(1, &(cl::OpenCLWorkspace::Global()->GetEventQueue(dev_).back())));
+      for (auto& kevt : evt_queue) {
+        OPENCL_CALL(clGetEventProfilingInfo(kevt, CL_PROFILING_COMMAND_START, sizeof(cl_ulong),
+                                            &start, nullptr));
+        OPENCL_CALL(
+            clGetEventProfilingInfo(kevt, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, nullptr));
+        this->duration += (end - start);
+      }
+    }
+  }
+  virtual int64_t SyncAndGetElapsedNanos() { return this->duration; }
+  // destructor
+  virtual ~OpenCLTimerNode() {}
+  // constructor
+  OpenCLTimerNode() {}
+  explicit OpenCLTimerNode(TVMContext dev) : dev_(dev) {}
+
+  static constexpr const char* _type_key = "OpenCLTimerNode";
+  TVM_DECLARE_FINAL_OBJECT_INFO(OpenCLTimerNode, TimerNode);
+
+ private:
+  int64_t duration;
+  TVMContext dev_;
+};
 
 }  // namespace runtime
 }  // namespace tvm

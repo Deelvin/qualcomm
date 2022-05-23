@@ -15,7 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
+import os, sys
+from cv2 import repeat
 import numpy as np
 
 import tvm
@@ -25,7 +26,7 @@ from tvm import autotvm
 from tvm.contrib import utils, ndk
 from tvm.topi import testing
 
-
+# logging.basicConfig(level=logging.INFO)
 class ModelImporter(object):
     def available_models(self):
         import inspect
@@ -1588,6 +1589,7 @@ class Executor(object):
         dtype="float32",
         validator=None
     ):
+        np.random.seed(1)
         if args.debug:
             from tvm.contrib.debugger import debug_runtime as graph_runtime
         else:
@@ -1617,7 +1619,8 @@ class Executor(object):
             else:
                 ctx = self.remote.cpu(0)
             lib.export_library(dso_binary_path, ndk.create_shared)
-            remote_path = "/data/local/tmp/" + dso_binary
+            
+            # remote_path = "/data/local/tmp/" + dso_binary
             self.remote.upload(dso_binary_path)
             print("Uploading binary...")
             rlib = self.remote.load_module(dso_binary)
@@ -1642,18 +1645,42 @@ class Executor(object):
             m.set_input("data", inputs[-1])
 
         print("Evaluating...", flush=True)
-
+        print("target...", target)
+        # print("m...", m.module.get_function("profile"))
+        # print("m...", dir(m.module))
+        # m.module["load_params"]
+        # return 0
         #num_iter = 1
         #print("change number of iter before benchmarking")
-        num_iter = 100
+        num_iter = 10 #???
         if args.debug:
-            m.run()
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
+            # m.run(number=num_iter)
+            # time_f = m.module.time_evaluator("run", ctx, number=num_iter, run_delay=60)
+            # if (1000 + 1000) * 100 > 200000 ????
+            time_f = m.module.time_evaluator("run", ctx, number=num_iter, repeat = 200, min_repeat_ms=1000, run_delay=1000)
+            # time_f = m.module.time_evaluator("run", ctx, number=num_iter, repeat = 100, min_repeat_ms=1000, run_delay=1000)
+            # time_f = m.module.time_evaluator("run", ctx, number=num_iter, repeat = 6, run_delay=100)
+            cost = time_f().mean
+            print("%g secs/iteration\n" % cost)
+            # print("time_f()", time_f())
+            # print("time_f", time_f)
         else:
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter*10)
-        cost = time_f().mean
-        print("%g secs/iteration\n" % cost)
+            # m.run()
+            # m.profile()
+            time_f = m.module.time_evaluator("run", ctx, number=num_iter, run_delay=60)
+            cost = time_f().mean
+            print("%g secs/iteration\n" % cost)
+            print("time_f()", time_f())
+            print("time_f", time_f)
 
+        np.set_printoptions(threshold=sys.maxsize)
+        num_outputs = m.get_num_outputs()
+        outputs = []
+        for i in range(num_outputs):
+            tvm_output = m.get_output(i)
+            outputs.append(tvm_output.asnumpy())
+        with open("e_output.txt", "w" ) as f:
+            f.write(str(outputs))
         if validator:
             if isinstance(validator, Validator):
                 ref_outputs = validator.GetReference()
