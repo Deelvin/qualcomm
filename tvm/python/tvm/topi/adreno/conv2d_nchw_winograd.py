@@ -204,12 +204,19 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     r_a = te.reduce_axis((0, alpha), "r_a")
     r_b = te.reduce_axis((0, alpha), "r_a")
     data_pack = te.compute(
-        (CI, P, alpha, alpha, CB),
-        lambda ci, p, eps, nu, cb: te.sum(
+        (P, CI, alpha, alpha, CB),
+        lambda p, ci, eps, nu, cb: te.sum(
             #data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
-            input_tile[ci][p][r_a][r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
+            input_tile[r_a][r_b][ci][p][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
+    )
+
+    # repack transformed data
+    data_pack_trans = te.compute(
+        (alpha, alpha, CI, P, CB),
+        lambda eps, nu, c, p, cb: data_pack[p][c][eps][nu][cb],
+        name="data_pack_trans",
     )
 
     # do batch gemm
@@ -218,7 +225,7 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     bgemm = te.compute(
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
-            (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
+            (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack_trans[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
             #kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
         ),
         name="bgemm",
@@ -262,7 +269,8 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     """Schedule winograd template"""
     inverse = s[output].op.input_tensors[0]
     bgemm, A = s[inverse].op.input_tensors
-    kernel_pack, data_pack = s[bgemm].op.input_tensors
+    kernel_pack, data_pack_trans = s[bgemm].op.input_tensors
+    data_pack = s[data_pack_trans].op.input_tensors[0]
     input_tile, B = s[data_pack].op.input_tensors
     pad_data = s[input_tile].op.input_tensors[0]
 
@@ -282,26 +290,27 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     #AM = s.cache_read(A, "global", [inverse])
     #bind_data_copy(s[AM])
 
-    eps, nu, ci, p, cb = s[input_tile].op.axis
-    fused = s[input_tile].fuse(eps, nu)
-    cfg.define_split("input_tile_ci", ci, num_outputs=2, filter=lambda entry: entry.size[1] <= 8)
-    cfg.define_split("input_tile_p", p, num_outputs=2, filter=lambda entry: entry.size[1] >= 4 and entry.size[1] <= 16)
-    cfg.define_split("input_tile_alpha", eps, num_outputs=2, filter=lambda entry: entry.size[1] == 1 or entry.size[1] == input_tile.shape[0])
-    # TODO: add multi_filter for stage
-    #cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
-    bx, tx = cfg["input_tile_p"].apply(s, input_tile, p)
-    by, ty = cfg["input_tile_ci"].apply(s, input_tile, ci)
-    bz, tz = cfg["input_tile_alpha"].apply(s, input_tile, fused)
-    #bz, tz = eps, nu
-    s[input_tile].reorder(bx, by, bz, tx, ty, tz, cb)
-    s[input_tile].vectorize(cb)
-    s[input_tile].bind(bx, te.thread_axis("blockIdx.x"))
-    s[input_tile].bind(tx, te.thread_axis("threadIdx.x"))
-    s[input_tile].bind(by, te.thread_axis("blockIdx.y"))
-    s[input_tile].bind(ty, te.thread_axis("threadIdx.y"))
-    s[input_tile].bind(bz, te.thread_axis("blockIdx.z"))
-    s[input_tile].bind(tz, te.thread_axis("threadIdx.z"))
-    s[input_tile].set_scope(get_texture_storage(input_tile.shape))
+    #eps, nu, ci, p, cb = s[input_tile].op.axis
+    #fused = s[input_tile].fuse(eps, nu)
+    #cfg.define_split("input_tile_ci", ci, num_outputs=2, filter=lambda entry: entry.size[1] <= 8)
+    #cfg.define_split("input_tile_p", p, num_outputs=2, filter=lambda entry: entry.size[1] >= 4 and entry.size[1] <= 16)
+    #cfg.define_split("input_tile_alpha", eps, num_outputs=2, filter=lambda entry: entry.size[1] == 1 or entry.size[1] == input_tile.shape[0])
+    ## TODO: add multi_filter for stage
+    ##cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
+    #bx, tx = cfg["input_tile_p"].apply(s, input_tile, p)
+    #by, ty = cfg["input_tile_ci"].apply(s, input_tile, ci)
+    #bz, tz = cfg["input_tile_alpha"].apply(s, input_tile, fused)
+    ##bz, tz = eps, nu
+    #s[input_tile].reorder(bx, by, bz, tx, ty, tz, cb)
+    #s[input_tile].vectorize(cb)
+    #s[input_tile].bind(bx, te.thread_axis("blockIdx.x"))
+    #s[input_tile].bind(tx, te.thread_axis("threadIdx.x"))
+    #s[input_tile].bind(by, te.thread_axis("blockIdx.y"))
+    #s[input_tile].bind(ty, te.thread_axis("threadIdx.y"))
+    #s[input_tile].bind(bz, te.thread_axis("blockIdx.z"))
+    #s[input_tile].bind(tz, te.thread_axis("threadIdx.z"))
+    #s[input_tile].set_scope(get_texture_storage(input_tile.shape))
+    s[input_tile].compute_inline()
 
     OL = s.cache_write(data_pack, "local")
     c, p, eps, nu, cb = s[data_pack].op.axis
@@ -324,6 +333,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     #s[data_pack].bind(ty, te.thread_axis("threadIdx.y"))
     fused = s[data_pack].fuse(c, p, eps, nu)
     bx, tx = s[data_pack].split(fused, 128)
+    s[data_pack].vectorize(cb)
     s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
     s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
 
@@ -339,6 +349,12 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[OL].vectorize(cb)
     s[OL].compute_at(s[data_pack], tx)
     s[data_pack].set_scope(get_texture_storage(data_pack.shape))
+
+    #eps, nu, ci, p, cb = s[data_pack_trans].op.axis
+    #fused = s[data_pack_trans].fuse(eps, nu)
+    #bind_data_copy(s[data_pack_trans])
+    #s[data_pack_trans].set_scope(get_texture_storage(data_pack_trans.shape))
+    s[data_pack_trans].compute_inline()
 
     # transform kernel
     if not pre_computed:
