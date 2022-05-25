@@ -18,6 +18,7 @@
 import os
 import numpy as np
 
+import mxnet.gluon as gluon
 import tvm
 from tvm import relay
 from tvm.relay import testing
@@ -547,8 +548,6 @@ def get_input_data_shape_dict(graph_def, input_shape):
 
 
 def gluon_model(name, batch_size=None):
-    import mxnet.gluon as gluon
-
     if "resnet50_v1" in name or "mobilenet1.0" in name or "resnet50_v2" in name or "vgg16" in name:
         model = gluon.model_zoo.vision.get_model(name, pretrained=True)
         data_shape = (batch_size, 3, 224, 224)
@@ -557,7 +556,6 @@ def gluon_model(name, batch_size=None):
         data_shape = (batch_size, 3, 299, 299)
     else:
         raise ValueError("Input shape unknown for gluon model: " + name)
-
     return model, data_shape
 
 
