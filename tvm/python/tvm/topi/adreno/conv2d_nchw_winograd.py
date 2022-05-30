@@ -44,7 +44,6 @@ def _infer_tile_size(data):
 @autotvm.register_topi_compute("conv2d_nchw_winograd.image2d")
 def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float16"}
-    #print(" >>>>>>>>>>> conv2d_nchw_winograd.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
     )
@@ -52,25 +51,21 @@ def conv2d_nchw_winograd(cfg, data, kernel, strides, padding, dilation, out_dtyp
 @autotvm.register_topi_compute("conv2d_nchw_winograd_acc32.image2d")
 def conv2d_nchw_winograd_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float32"}
-    #print(" >>>>>>>>>>> conv2d_nchw_winograd_acc32.image2d")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=False
     )
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd.image2d")
 def schedule_conv2d_nchw_winograd(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16")
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_acc32.image2d")
 def schedule_conv2d_nchw_winograd_acc32(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd_acc32")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32")
 
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform.image2d")
 def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float16"}
-    #print("conv2d_nchw_winograd_without_weight_transform")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
@@ -78,19 +73,16 @@ def conv2d_nchw_winograd_without_weight_transform(cfg, data, kernel, strides, pa
 @autotvm.register_topi_compute("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def conv2d_nchw_winograd_without_weight_transform_acc32(cfg, data, kernel, strides, padding, dilation, out_dtype):
     args={"shared" : False, "accumulator" : "float32"}
-    #print("conv2d_nchw_winograd_without_weight_transform_acc32")
     return conv2d_nchw_winograd_comp(
         cfg, data, kernel, strides, padding, dilation, out_dtype, args=args, pre_computed=True
     )
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd_without_weight_transform")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc16", pre_computed=True)
 
 @autotvm.register_topi_schedule("conv2d_nchw_winograd_without_weight_transform_acc32.image2d")
 def schedule_conv2d_nchw_winograd_without_weight_transform_acc32(cfg, outs):
-    #print("schedule_conv2d_nchw_winograd_without_weight_transform_acc32")
     return schedule_conv2d_nchw_winograd_impl(cfg, outs, tag="cast_from_acc32", pre_computed=True)
 
 def schedule_conv2d_nchw_winograd_impl(cfg, outs, tag, pre_computed=False):
@@ -206,7 +198,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
     data_pack = te.compute(
         (P, CI, alpha, alpha, CB),
         lambda p, ci, eps, nu, cb: te.sum(
-            #data_pad[idxdiv(p, (nH * nW))][ci][idxmod(idxdiv(p, nW), nH) * m + r_a][idxmod(p, nW) * m + r_b][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
             input_tile[r_a][r_b][ci][p][cb] * B[r_a][eps] * B[r_b][nu], axis=[r_a, r_b]
         ),
         name="data_pack",
@@ -226,7 +217,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         (alpha, alpha, CO, P, COB),
         lambda eps, nu, co, p, cob: te.sum(
             (kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack_trans[eps][nu][ci][p][cb]).astype(args["accumulator"]), axis=[ci, cb]
-            #kernel_pack[eps][nu][ci * CB + cb][co][cob] * data_pack[eps][nu][ci][p][cb], axis=[ci, cb]
         ),
         name="bgemm",
     )
@@ -238,7 +228,6 @@ def conv2d_nchw_winograd_comp(cfg, data, kernel, strides, padding, dilation, out
         (CO, P, m, m, COB),
         lambda co, p, vh, vw, cob: te.sum(
             bgemm[r_a][r_b][co][p][cob] * (A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
-            #(bgemm[r_a][r_b][co][p][cob] * A[r_a][vh] * A[r_b][vw]).astype(args["accumulator"]), axis=[r_a, r_b]
         ),
         name="inverse",
     )
@@ -284,53 +273,10 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
         AA = s.cache_read(pad_data, get_texture_storage(pad_data.shape), [input_tile])
         bind_data_copy(s[AA])
 
-    # Precalculate matrix
-    #BM = s.cache_read(B, "global", [data_pack])
-    #bind_data_copy(s[BM])
-    #AM = s.cache_read(A, "global", [inverse])
-    #bind_data_copy(s[AM])
-
-    #eps, nu, ci, p, cb = s[input_tile].op.axis
-    #fused = s[input_tile].fuse(eps, nu)
-    #cfg.define_split("input_tile_ci", ci, num_outputs=2, filter=lambda entry: entry.size[1] <= 8)
-    #cfg.define_split("input_tile_p", p, num_outputs=2, filter=lambda entry: entry.size[1] >= 4 and entry.size[1] <= 16)
-    #cfg.define_split("input_tile_alpha", eps, num_outputs=2, filter=lambda entry: entry.size[1] == 1 or entry.size[1] == input_tile.shape[0])
-    ## TODO: add multi_filter for stage
-    ##cfg.multi_filter(filter=lambda entity: entity["tile_y"].size[2] * entity["tile_x"].size[2] in range(32,1024))
-    #bx, tx = cfg["input_tile_p"].apply(s, input_tile, p)
-    #by, ty = cfg["input_tile_ci"].apply(s, input_tile, ci)
-    #bz, tz = cfg["input_tile_alpha"].apply(s, input_tile, fused)
-    ##bz, tz = eps, nu
-    #s[input_tile].reorder(bx, by, bz, tx, ty, tz, cb)
-    #s[input_tile].vectorize(cb)
-    #s[input_tile].bind(bx, te.thread_axis("blockIdx.x"))
-    #s[input_tile].bind(tx, te.thread_axis("threadIdx.x"))
-    #s[input_tile].bind(by, te.thread_axis("blockIdx.y"))
-    #s[input_tile].bind(ty, te.thread_axis("threadIdx.y"))
-    #s[input_tile].bind(bz, te.thread_axis("blockIdx.z"))
-    #s[input_tile].bind(tz, te.thread_axis("threadIdx.z"))
-    #s[input_tile].set_scope(get_texture_storage(input_tile.shape))
     s[input_tile].compute_inline()
 
     OL = s.cache_write(data_pack, "local")
     c, p, eps, nu, cb = s[data_pack].op.axis
-    #s[data_pack].reorder(eps, c, nu, p, cb)
-    #f1 = s[data_pack].fuse(eps, c)
-    #f2 = s[data_pack].fuse(nu, p)
-    #cfg.define_split("tile_data_x", f2, num_outputs=3, filter=lambda entry: entry.size[2] <= 16 and entry.size[1] == 4)
-    #p, pi = s[data_pack].split(p, 1)
-    #by, ty = s[data_pack].split(f1, 64)
-    #bx, vx, tx = cfg["tile_data_x"].apply(s, data_pack, f2)
-    #bx, tx = s[data_pack].split(f2, 16)
-    #bx, tx = p, nu
-    #by, ty = c, eps
-    #s[data_pack].reorder(by, bx, ty, tx, cb)
-    #s[data_pack].reorder(bx, by, tx, ty, pi, cb)
-    #s[data_pack].vectorize(cb)
-    #s[data_pack].bind(bx, te.thread_axis("blockIdx.x"))
-    #s[data_pack].bind(tx, te.thread_axis("threadIdx.x"))
-    #s[data_pack].bind(by, te.thread_axis("blockIdx.y"))
-    #s[data_pack].bind(ty, te.thread_axis("threadIdx.y"))
     fused = s[data_pack].fuse(c, p, eps, nu)
     bx, tx = s[data_pack].split(fused, 128)
     s[data_pack].vectorize(cb)
@@ -339,9 +285,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
 
     c, p, eps, nu, cb = s[OL].op.axis
     r_a, r_b = s[OL].op.reduce_axis
-    #s[OL].reorder(eps, nu, c, p, r_a, r_b, cb)
-    #s[OL].unroll(r_b)
-    #s[OL].unroll(r_a)
     s[OL].unroll(eps)
     s[OL].unroll(nu)
     s[OL].unroll(r_a)
@@ -350,10 +293,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[OL].compute_at(s[data_pack], tx)
     s[data_pack].set_scope(get_texture_storage(data_pack.shape))
 
-    #eps, nu, ci, p, cb = s[data_pack_trans].op.axis
-    #fused = s[data_pack_trans].fuse(eps, nu)
-    #bind_data_copy(s[data_pack_trans])
-    #s[data_pack_trans].set_scope(get_texture_storage(data_pack_trans.shape))
     s[data_pack_trans].compute_inline()
 
     # transform kernel
@@ -390,8 +329,7 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[pad_data].compute_inline()
 
     ##### space definition begin #####
-    #cfg.define_knob("auto_unroll_max_step", [0, 128, 1500])
-    #cfg.define_knob("unroll_explicit", [0, 1])
+    cfg.define_knob("auto_unroll_max_step", [0, 4, 16])
     b1, b2, y, x, cb = s[bgemm].op.axis
     rcc = s[bgemm].op.reduce_axis[0]
     alpha = get_const_int(b1.dom.extent)
@@ -415,20 +353,12 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     bgemm_scope, by = s[bgemm].split(by, nparts=1)
     by, vy, ty = cfg["tile_y"].apply(s, bgemm, by)
     bx, vx, tx = cfg["tile_x"].apply(s, bgemm, x)
-    #bx = x
-    #bx, vx = s[bgemm].split(x, 4)
-    #bx, tx = s[bgemm].split(bx, 16)
-    #by, ty = s[bgemm].split(by, 64)
-    #bx, tx = s[bgemm].split(x, bgemm.shape[2] // 64)
-    #s[bgemm].bind(b, te.thread_axis("blockIdx.z"))
     s[bgemm].bind(by, te.thread_axis("blockIdx.y"))
     s[bgemm].bind(bx, te.thread_axis("blockIdx.x"))
     s[bgemm].bind(vy, te.thread_axis("vthread"))
     s[bgemm].bind(vx, te.thread_axis("vthread"))
     s[bgemm].bind(ty, te.thread_axis("threadIdx.y"))
     s[bgemm].bind(tx, te.thread_axis("threadIdx.x"))
-    #s[bgemm].reorder(bgemm_scope, b, by, bx, vy, vx, ty, tx, cb)
-    #s[bgemm].reorder(bgemm_scope, b, by, bx, ty, tx, cb)
     s[bgemm].reorder(bgemm_scope, by, bx, vy, vx, ty, tx, cb)
     s[bgemm].vectorize(cb)
     s[bgemm].set_scope(get_texture_storage(bgemm.shape))
@@ -438,21 +368,20 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     b1, b2, y, x, cb = s[OL].op.axis
     (rcc, rcb) = s[OL].op.reduce_axis
     b = s[OL].fuse(b1, b2)
-    #rco, rci = cfg["tile_rc"].apply(s, OL, rcc)
-    #s[OL].reorder(rco, rci, rcb, b, y, x, cb)
     s[OL].reorder(b, y, x, rcc, rcb, cb)
-    s[OL].unroll(rcb)
+    # TODO: commented unroll improves performance of vgg16 for fp16_fp32
+    # inference. After using auto_unroll_max_step for automatic unrolling the
+    # optimal configuration wasn't found. It is necessary to investigate how we
+    # can improve search of optimal configuration.
+    #s[OL].unroll(rcb)
+    s[OL].pragma(rcb, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
+    s[OL].pragma(rcb, "unroll_explicit", True)
     s[OL].vectorize(cb)
-
-    #s[bgemm].pragma(bgemm_scope, "auto_unroll_max_step", cfg["auto_unroll_max_step"].val)
-    #s[bgemm].pragma(bgemm_scope, "unroll_explicit", cfg["unroll_explicit"].val)
 
     # schedule inverse, output and fusion
     if output.op in s.outputs:
-        #print("output.op in s.outputs: True")
         OL = None
     else:
-        #print("output.op in s.outputs: False")
         OL = output
         s[OL].set_scope("local")
         output = s.outputs[0]
@@ -465,16 +394,6 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     ho, wo, hi, wi = s[output].tile(h, w, m, m)
     inverse_scope, n = s[output].split(n, nparts=1)
 
-    #f1 = s[output].fuse(ho, wo)
-    #f2 = s[output].fuse(n, co)
-    #bx, tx = s[output].split(f1, 224)
-    #by, ty = s[output].split(f2, 4)
-
-    #s[output].bind(bx, te.thread_axis("blockIdx.x"))
-    #s[output].bind(tx, te.thread_axis("threadIdx.x"))
-    #s[output].bind(by, te.thread_axis("blockIdx.y"))
-    #s[output].bind(ty, te.thread_axis("threadIdx.y"))
-    #s[output].reorder(bx, by, tx, ty)
     fused = s[output].fuse(n, co, ho, wo)
     bb, tt = s[output].split(fused, 128)
 
@@ -482,17 +401,13 @@ def schedule_conv2d_winograd(cfg, s, output, pre_computed):
     s[output].bind(tt, te.thread_axis("threadIdx.x"))
 
     if OL is not None:
-        #print("if OL is not None")
         s[OL].compute_at(s[output], tt)
-        #s[OL].compute_at(s[output], ty)
 
     co, p, vh, vw, cb = s[inverse].op.axis
     r_a, r_b = s[inverse].op.reduce_axis
-    #s[inverse].unroll(r_b)
     for axis in [vh, vw, r_a, r_b]:
         s[inverse].unroll(axis)
     s[inverse].vectorize(cb)
-    #s[inverse].compute_at(s[output], ty)
     s[inverse].compute_at(s[output], tt)
 
     return s
