@@ -17,6 +17,7 @@
 
 import os
 import numpy as np
+import time
 
 import mxnet.gluon as gluon
 import tvm
@@ -25,6 +26,7 @@ from tvm.relay import testing
 from tvm import autotvm
 from tvm.contrib import utils, ndk
 from tvm.topi import testing
+from tvm.runtime.module import BenchmarkResult
 
 # DEELVIN-207
 # from tvm.relay.op import register_mixed_precision_conversion
@@ -756,6 +758,23 @@ class Executor(object):
         self.remote = None
         self.tracker = None
 
+    def _time_evaluator(self, module, ctx, repeats=1, min_repeat_ms=0, cooldown_interval_ms=0):
+        def evaluator():
+            def ms_to_s(ms): 
+                return ms / 1000
+
+            results = []
+            time_f = module.module.time_evaluator("run", ctx, number=1)
+            one = time_f().results[0]
+            nums = round(ms_to_s(min_repeat_ms)/one)
+            for _ in range(repeats):
+                time_f = module.module.time_evaluator("run", ctx, number=1, repeat=nums)
+                results.append(time_f().results)
+                time.sleep(ms_to_s(cooldown_interval_ms))
+            
+            return BenchmarkResult([np.mean(r) for r in results])
+        return evaluator
+
     def _benchmark(
         self,
         tvm_mod,
@@ -822,12 +841,15 @@ class Executor(object):
 
         #num_iter = 1
         #print("change number of iter before benchmarking")
-        num_iter = 100
+
+        repeats = 200
+        min_repeat_ms = 1000
+        cooldown_interval_ms = 1000
         if args.debug:
             m.run()
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
+            time_f = self._time_evaluator(m, ctx, repeats, min_repeat_ms, cooldown_interval_ms)
         else:
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
+            time_f = self._time_evaluator(m, ctx, repeats, min_repeat_ms, cooldown_interval_ms)
         cost = time_f().mean
         print("%g secs/iteration\n" % cost)
 
