@@ -744,13 +744,41 @@ class Executor(object):
         )
         self.tracker = rpc.connect_tracker(args.rpc_tracker_host, args.rpc_tracker_port)
         self.remote = self.tracker.request(
-            args.rpc_key, priority=0, session_timeout=600
+            args.rpc_key, priority=0, session_timeout=6000
         )
         print("Tracker connected to remote RPC server")
 
     def _disconnect_tracker(self):
         self.remote = None
         self.tracker = None
+
+    def advanced_time_evaluator(self, m, func_name, ctx, number=1, repeat=1, min_repeat_ms=0, time_to_work_ms=0, cooldown_interval_ms=0, f_preproc=""):
+        import inspect
+        import math
+        def ms_to_s(ms): 
+            return ms / 1000
+        one_run_time = m.module.time_evaluator(func_name, ctx, number=1,repeat=1,min_repeat_ms=0)().results[0]
+        repeats_to_cooldown = max(round(ms_to_s(time_to_work_ms)/one_run_time), 1)
+
+        def _time_evaluator(func_name, m, ctx, number=1, repeat=1, min_repeat_ms=0, cooldown_interval_ms=0, repeats_to_cooldown=1, f_preproc=""):
+            def evaluator():
+                import time
+                from tvm.runtime.module import BenchmarkResult
+                results = []
+                for _ in range(math.ceil(repeat / repeats_to_cooldown)):
+                    time_f = m.module.time_evaluator(func_name, ctx, number=number, repeat=repeats_to_cooldown, min_repeat_ms=min_repeat_ms, f_preproc=f_preproc)
+                    results.append(time_f().results)
+                    time.sleep(ms_to_s(cooldown_interval_ms))
+                return BenchmarkResult([np.mean(r) for r in results])
+            return evaluator
+
+        if inspect.signature(m.module.time_evaluator).parameters.get("cooldown_interval_ms"):
+            time_f = m.module.time_evaluator(func_name, ctx, number=number, repeat=repeat, min_repeat_ms=min_repeat_ms, cooldown_interval_ms=cooldown_interval_ms, repeats_to_cooldown=repeats_to_cooldown, f_preproc=f_preproc)
+        else:
+            time_f = _time_evaluator(func_name, m, ctx, number=number, repeat=repeat, min_repeat_ms=min_repeat_ms, cooldown_interval_ms=cooldown_interval_ms, repeats_to_cooldown=repeats_to_cooldown, f_preproc=f_preproc)
+            
+        return time_f
+
 
     def _benchmark(
         self,
@@ -815,17 +843,21 @@ class Executor(object):
             m.set_input("data", inputs[-1])
 
         print("Evaluating...", flush=True)
-
-        #num_iter = 1
-        #print("change number of iter before benchmarking")
-        num_iter = 100
+        number = 1
+        repeat = 100
+        min_repeat_ms = 0
+        time_to_work_ms = 1000
+        cooldown_interval_ms=1000
         if args.debug:
             m.run()
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
+            time_f = self.advanced_time_evaluator(m, "run", ctx, number, repeat, min_repeat_ms, time_to_work_ms, cooldown_interval_ms)
         else:
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
-        cost = time_f().mean
+            time_f = self.advanced_time_evaluator(m, "run", ctx, number, repeat, min_repeat_ms, time_to_work_ms, cooldown_interval_ms)
+
+        benchmarkResult = time_f()
+        cost = benchmarkResult.mean
         print("%g secs/iteration\n" % cost)
+        print(benchmarkResult)
 
         if validator:
             if isinstance(validator, Validator):
