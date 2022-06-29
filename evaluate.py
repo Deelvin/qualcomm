@@ -242,10 +242,6 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["ResizeBilinear_2"])
 
-        # TODO(amalyshe): There must not be below line since it is expected to call
-        # FlattenAtrousConv withing standard optimization tvm passes.
-        # something went wrong
-        mod = tvm.relay.transform.FlattenAtrousConv()(mod)
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
         if dtype == "float16":
