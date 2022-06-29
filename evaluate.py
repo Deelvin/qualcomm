@@ -779,6 +779,27 @@ class Executor(object):
             
         return time_f
 
+    def check_distribution(self, y, tolerance=0.05, show_plot=False):
+        import warnings
+        from sklearn.linear_model import LinearRegression
+
+        num_samples = len(y)
+        x = np.array(list(range(num_samples))).reshape((-1, 1))
+
+        model = LinearRegression(fit_intercept=True, copy_X=True)
+        model.fit(x, y)
+        print("intercept (b0):", model.intercept_)
+        print("slope (b1):", model.coef_)
+        print("coefficient of determination:", model.score(x, y))
+        if (model.score(x, y) >= tolerance):
+            warnings.warn("The coefficient of determination is higher than the acceptable coefficient of determination, use cooling of the device.", UserWarning)
+            show_plot = True
+
+        if show_plot:
+            import matplotlib.pyplot as plt
+            plt.plot(y)
+            plt.plot(model.predict(x))
+            plt.show()
 
     def _benchmark(
         self,
@@ -857,6 +878,8 @@ class Executor(object):
         benchmarkResult = time_f()
         cost = benchmarkResult.mean
         print("%g secs/iteration\n" % cost)
+        results = benchmarkResult.results
+        self.check_distribution(results)
         print(benchmarkResult)
 
         if validator:
