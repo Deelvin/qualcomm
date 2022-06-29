@@ -249,7 +249,7 @@ class ModelImporter(object):
             mod = relay.quantize.prerequisite_optimize(mod, params)
 
         mod = relay.quantize.prerequisite_optimize(mod, params)
-        return (mod, params, shape_dict, dtype, target)
+        return (mod, params, shape_dict, dtype, target, Deeplabv3Validator(shape_dict, dtype))
 
 
 
@@ -703,6 +703,38 @@ class VOCValidator(Validator):
         for a in classid:
             print(a)
 
+class Deeplabv3Validator(Validator):
+    def __init__(self, input_shape, dtype):
+        from os.path import join
+        from tvm.contrib import download
+        assert isinstance(input_shape, dict)
+        assert dtype in ["float16", "float32"]
+        np.random.seed(1)
+        self.dtype = dtype
+        self.inputs = {}
+        for key in input_shape:
+            self.inputs[key] = np.random.normal(size=input_shape[key]).astype(self.dtype)
+        
+        categ_url = "https://github.com/Deelvin/qualcomm/raw/avoronov/rebase_master_v2"
+        categ_fn = "deeplabv3_reference_output_{}".format(dtype)
+        download.download(join(categ_url, categ_fn), categ_fn)
+        # genered by target="llvm -keys=cpu" at np.random.seed(1)
+        self.ref_outputs = eval(open(categ_fn).read())
+
+    def GetReference(self):
+        return self.ref_outputs
+
+    def Validate(self, m, ref_outputs=[]):
+        if self.dtype == "float16":
+            rtol=1e-1
+            atol=1e-1
+        if self.dtype == "float32": 
+            rtol=1e-3
+            atol=1e-3
+        for i in range(m.get_num_outputs()):
+            tvm_output = m.get_output(i)
+            np.testing.assert_allclose(tvm_output.asnumpy(), ref_outputs[i], rtol=rtol, atol=atol)
+        print("Deeplabv3Validator pass:", "rtol", rtol, "atol",atol)
 
 class Yolov3Validator(Validator):
     class BoundBox:
