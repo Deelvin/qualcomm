@@ -242,10 +242,6 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["ResizeBilinear_2"])
 
-        # TODO(amalyshe): There must not be below line since it is expected to call
-        # FlattenAtrousConv withing standard optimization tvm passes.
-        # something went wrong
-        mod = tvm.relay.transform.FlattenAtrousConv()(mod)
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
         if dtype == "float16":
@@ -253,7 +249,7 @@ class ModelImporter(object):
             mod = relay.quantize.prerequisite_optimize(mod, params)
 
         mod = relay.quantize.prerequisite_optimize(mod, params)
-        return (mod, params, shape_dict, dtype, target)
+        return (mod, params, shape_dict, dtype, target, Deeplabv3Validator(shape_dict, dtype))
 
 
 
@@ -302,7 +298,7 @@ class ModelImporter(object):
             mod = downcast_fp16(mod["main"], mod)
             mod = relay.quantize.prerequisite_optimize(mod, params)
 
-        return (mod, params, shape_dict, dtype, target)
+        return (mod, params, shape_dict, dtype, target, Yolov3Validator(shape_dict))
 
 
     def import_resnet50(self, target="llvm", dtype="float32"):
@@ -707,6 +703,276 @@ class VOCValidator(Validator):
         for a in classid:
             print(a)
 
+class Deeplabv3Validator(Validator):
+    def __init__(self, input_shape, dtype):
+        from os.path import join
+        from tvm.contrib import download
+        assert isinstance(input_shape, dict)
+        assert dtype in ["float16", "float32"]
+        np.random.seed(1)
+        self.dtype = dtype
+        self.inputs = {}
+        for key in input_shape:
+            self.inputs[key] = np.random.normal(size=input_shape[key]).astype(self.dtype)
+        
+        categ_url = "https://github.com/Deelvin/qualcomm/raw/avoronov/rebase_master_v2"
+        categ_fn = "deeplabv3_reference_output_{}".format(dtype)
+        download.download(join(categ_url, categ_fn), categ_fn)
+        # genered by target="llvm -keys=cpu" at np.random.seed(1)
+        self.ref_outputs = eval(open(categ_fn).read())
+
+    def GetReference(self):
+        return self.ref_outputs
+
+    def Validate(self, m, ref_outputs=[]):
+        if self.dtype == "float16":
+            rtol=1e-1
+            atol=1e-1
+        if self.dtype == "float32": 
+            rtol=1e-3
+            atol=1e-3
+        for i in range(m.get_num_outputs()):
+            tvm_output = m.get_output(i)
+            np.testing.assert_allclose(tvm_output.asnumpy(), ref_outputs[i], rtol=rtol, atol=atol)
+        print("Deeplabv3Validator pass:", "rtol", rtol, "atol",atol)
+
+class Yolov3Validator(Validator):
+    class BoundBox:
+        def __init__(self, xmin, ymin, xmax, ymax, objness = None, classes = None):
+            self.xmin = xmin
+            self.ymin = ymin
+            self.xmax = xmax
+            self.ymax = ymax
+            self.objness = objness
+            self.classes = classes
+            self.label = -1
+            self.score = -1
+
+        def get_label(self):
+            if self.label == -1:
+                self.label = np.argmax(self.classes)
+
+            return self.label
+
+        def get_score(self):
+            if self.score == -1:
+                self.score = self.classes[self.get_label()]
+
+            return self.score
+
+    def decode_netout(netout, anchors, obj_thresh, net_h, net_w):
+        grid_h, grid_w = netout.shape[:2]
+        nb_box = 3
+        netout = netout.reshape((grid_h, grid_w, nb_box, -1))
+        nb_class = netout.shape[-1] - 5
+        boxes = []
+
+        def _sigmoid(x):
+            return 1. / (1. + np.exp(-x))
+
+        netout[..., :2]  = _sigmoid(netout[..., :2])
+        netout[..., 4:]  = _sigmoid(netout[..., 4:])
+        netout[..., 5:]  = netout[..., 4][..., np.newaxis] * netout[..., 5:]
+        netout[..., 5:] *= netout[..., 5:] > obj_thresh
+
+        for i in range(grid_h*grid_w):
+            row = i / grid_w
+            col = i % grid_w
+            for b in range(nb_box):
+                # 4th element is objectness score
+                objectness = netout[int(row)][int(col)][b][4]
+                if(objectness.all() <= obj_thresh): continue
+                # first 4 elements are x, y, w, and h
+                x, y, w, h = netout[int(row)][int(col)][b][:4]
+                x = (col + x) / grid_w # center position, unit: image width
+                y = (row + y) / grid_h # center position, unit: image height
+                w = anchors[2 * b + 0] * np.exp(w) / net_w # unit: image width
+                h = anchors[2 * b + 1] * np.exp(h) / net_h # unit: image height
+                # last elements are class probabilities
+                classes = netout[int(row)][col][b][5:]
+                box = Yolov3Validator.BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, objectness, classes)
+                boxes.append(box)
+        return boxes
+
+    def correct_yolo_boxes(boxes, image_h, image_w, net_h, net_w):
+        new_w, new_h = net_w, net_h
+        for i in range(len(boxes)):
+            x_offset, x_scale = (net_w - new_w)/2./net_w, float(new_w)/net_w
+            y_offset, y_scale = (net_h - new_h)/2./net_h, float(new_h)/net_h
+            boxes[i].xmin = int((boxes[i].xmin - x_offset) / x_scale * image_w)
+            boxes[i].xmax = int((boxes[i].xmax - x_offset) / x_scale * image_w)
+            boxes[i].ymin = int((boxes[i].ymin - y_offset) / y_scale * image_h)
+            boxes[i].ymax = int((boxes[i].ymax - y_offset) / y_scale * image_h)
+    
+    def bbox_iou(box1, box2):
+        def _interval_overlap(interval_a, interval_b):
+            x1, x2 = interval_a
+            x3, x4 = interval_b
+            if x3 < x1:
+                if x4 < x1:
+                    return 0
+                else:
+                    return min(x2,x4) - x1
+            else:
+                if x2 < x3:
+                    return 0
+                else:
+                    return min(x2,x4) - x3
+        intersect_w = _interval_overlap([box1.xmin, box1.xmax], [box2.xmin, box2.xmax])
+        intersect_h = _interval_overlap([box1.ymin, box1.ymax], [box2.ymin, box2.ymax])
+        intersect = intersect_w * intersect_h
+        w1, h1 = box1.xmax-box1.xmin, box1.ymax-box1.ymin
+        w2, h2 = box2.xmax-box2.xmin, box2.ymax-box2.ymin
+        union = w1*h1 + w2*h2 - intersect
+        return float(intersect) / union
+
+    def do_nms(boxes, nms_thresh):
+        if len(boxes) > 0:
+            nb_class = len(boxes[0].classes)
+        else:
+            return
+        for c in range(nb_class):
+            sorted_indices = np.argsort([-box.classes[c] for box in boxes])
+            for i in range(len(sorted_indices)):
+                index_i = sorted_indices[i]
+                if boxes[index_i].classes[c] == 0: continue
+                for j in range(i+1, len(sorted_indices)):
+                    index_j = sorted_indices[j]
+                    if Yolov3Validator.bbox_iou(boxes[index_i], boxes[index_j]) >= nms_thresh:
+                        boxes[index_j].classes[c] = 0
+
+    # load and prepare an image
+    @staticmethod
+    def load_image_pixels(filename, shape):
+        from keras.preprocessing.image import load_img
+        from keras.preprocessing.image import img_to_array
+        # load the image to get its shape
+        image = load_img(filename)
+        width, height = image.size
+        # load the image with the required size
+        image = load_img(filename, target_size=shape)
+        # convert to numpy array
+        image = img_to_array(image)
+        # scale pixel values to [0, 1]
+        image = image.astype('float32')
+        image /= 255.0
+        # add a dimension so that we have one sample
+        image = np.expand_dims(image, 0)
+        return image, width, height
+
+    # get all of the results above a threshold
+    @staticmethod
+    def get_boxes(boxes, labels, thresh):
+        v_boxes, v_labels, v_scores = list(), list(), list()
+        # enumerate all boxes
+        for box in boxes:
+            # enumerate all possible labels
+            for i in range(len(labels)):
+                # check if the threshold for this label is high enough
+                if box.classes[i] > thresh:
+                    v_boxes.append(box)
+                    v_labels.append(labels[i])
+                    v_scores.append(box.classes[i]*100)
+                    # don't break, many labels may trigger for one box
+        return v_boxes, v_labels, v_scores
+
+    # draw all results
+    @staticmethod
+    def draw_boxes(filename, v_boxes, v_labels, v_scores):
+        from matplotlib import pyplot
+        from matplotlib.patches import Rectangle
+        # load the image
+        from PIL import Image
+        if ".png" not in filename:
+            name, extension = filename.rsplit('.', 1)
+            im1 = Image.open(filename)
+            filename = "{}.png".format(name)
+            im1.save(filename)
+
+        data = pyplot.imread(filename)
+        # plot the image
+        pyplot.imshow(data)
+        # get the context for drawing boxes
+        ax = pyplot.gca()
+        # plot each box
+        for i in range(len(v_boxes)):
+            box = v_boxes[i]
+            # get coordinates
+            y1, x1, y2, x2 = box.ymin, box.xmin, box.ymax, box.xmax
+            # calculate width and height of the box
+            width, height = x2 - x1, y2 - y1
+            # create the shape
+            rect = Rectangle((x1, y1), width, height, fill=False, color='white')
+            # draw the box
+            ax.add_patch(rect)
+            # draw text and score in top left corner
+            label = "%s (%.3f)" % (v_labels[i], v_scores[i])
+            pyplot.text(x1, y1, label, color='white')
+        # show the plot
+        pyplot.show()
+
+    def __init__(self, input_shape, dtype="float32"):
+        from tvm.contrib import download
+        from os.path import join
+        n, h, w, c = list(input_shape.values())[0]
+        self.input_w, self.input_h = h, w
+
+        # Download Coco names
+        names_url = "https://github.com/pjreddie/darknet/raw/master/data/"
+        names_fn = "coco.names"
+        download.download(join(names_url, names_fn), names_fn, overwrite=True)
+        self.labels = [line.rstrip() for line in open(names_fn).readlines()]
+
+        # Download test image
+        image_url = "https://raw.githubusercontent.com/pjreddie/darknet/master/data/dog.jpg"
+        self.image_fn = "dog.jpg"
+        download.download(image_url, self.image_fn)
+
+        # # load and prepare image
+        image, image_w, image_h = Yolov3Validator.load_image_pixels(self.image_fn, (self.input_w, self.input_h))
+        self.image_w = image_w
+        self.image_h = image_h
+        self.image = image
+        self.inputs = { list(input_shape.keys())[0]: image } 
+
+    def Validate(self, m, ref_outputs=[], show=False):
+        # output  
+        num_outputs = m.get_num_outputs()
+        outputs = []
+        for i in range(num_outputs):
+            tvm_output = m.get_output(i)
+            outputs.append(tvm_output.asnumpy())
+
+        # summarize the shape of the list of arrays
+        print([a.shape for a in outputs])
+
+        # define the anchors
+        anchors = [[116,90, 156,198, 373,326], [30,61, 62,45, 59,119], [10,13, 16,30, 33,23]]
+
+        # define the probability threshold for detected objects
+        class_threshold = 0.6
+        boxes = []
+        for i in range(len(outputs)):
+            # decode the output of the network
+            boxes += Yolov3Validator.decode_netout(outputs[i][0], anchors[i], class_threshold, self.input_h, self.input_w)
+        # correct the sizes of the bounding boxes for the shape of the image
+        Yolov3Validator.correct_yolo_boxes(boxes, self.image_h, self.image_w, self.input_h, self.input_w)
+        # suppress non-maximal boxes
+        Yolov3Validator.do_nms(boxes, 0.5)
+
+        # get the details of the detected objects
+        v_boxes, v_labels, v_scores = Yolov3Validator.get_boxes(boxes, self.labels, class_threshold)
+
+        # summarize what we found
+        for i in range(len(v_boxes)):
+            print(v_labels[i], v_scores[i])
+        
+        assert all(["truck" in v_labels, "bicycle" in v_labels, "dog" in v_labels]), "Failed Yolov3 validation check"
+
+        if show:
+            # draw what we found
+           Yolov3Validator.draw_boxes(self.image_fn, v_boxes, v_labels, v_scores)
+
 class Executor(object):
     def __init__(self, use_tracker=False):
         self.benchmarks = []
@@ -748,13 +1014,62 @@ class Executor(object):
         )
         self.tracker = rpc.connect_tracker(args.rpc_tracker_host, args.rpc_tracker_port)
         self.remote = self.tracker.request(
-            args.rpc_key, priority=0, session_timeout=600
+            args.rpc_key, priority=0, session_timeout=6000
         )
         print("Tracker connected to remote RPC server")
 
     def _disconnect_tracker(self):
         self.remote = None
         self.tracker = None
+
+    def advanced_time_evaluator(self, m, func_name, ctx, number=1, repeat=1, min_repeat_ms=0, time_to_work_ms=0, cooldown_interval_ms=0, f_preproc=""):
+        import inspect
+        import math
+        def ms_to_s(ms): 
+            return ms / 1000
+        one_run_time = m.module.time_evaluator(func_name, ctx, number=1,repeat=1,min_repeat_ms=0)().results[0]
+        repeats_to_cooldown = max(round(ms_to_s(time_to_work_ms)/one_run_time), 1)
+
+        def _time_evaluator(func_name, m, ctx, number=1, repeat=1, min_repeat_ms=0, cooldown_interval_ms=0, repeats_to_cooldown=1, f_preproc=""):
+            def evaluator():
+                import time
+                from tvm.runtime.module import BenchmarkResult
+                results = []
+                for _ in range(math.ceil(repeat / repeats_to_cooldown)):
+                    time_f = m.module.time_evaluator(func_name, ctx, number=number, repeat=repeats_to_cooldown, min_repeat_ms=min_repeat_ms, f_preproc=f_preproc)
+                    results.append(time_f().results)
+                    time.sleep(ms_to_s(cooldown_interval_ms))
+                return BenchmarkResult([np.mean(r) for r in results])
+            return evaluator
+
+        if inspect.signature(m.module.time_evaluator).parameters.get("cooldown_interval_ms"):
+            time_f = m.module.time_evaluator(func_name, ctx, number=number, repeat=repeat, min_repeat_ms=min_repeat_ms, cooldown_interval_ms=cooldown_interval_ms, repeats_to_cooldown=repeats_to_cooldown, f_preproc=f_preproc)
+        else:
+            time_f = _time_evaluator(func_name, m, ctx, number=number, repeat=repeat, min_repeat_ms=min_repeat_ms, cooldown_interval_ms=cooldown_interval_ms, repeats_to_cooldown=repeats_to_cooldown, f_preproc=f_preproc)
+            
+        return time_f
+
+    def check_distribution(self, y, tolerance=0.05, show_plot=False):
+        import warnings
+        from sklearn.linear_model import LinearRegression
+
+        num_samples = len(y)
+        x = np.array(list(range(num_samples))).reshape((-1, 1))
+
+        model = LinearRegression(fit_intercept=True, copy_X=True)
+        model.fit(x, y)
+        print("intercept (b0):", model.intercept_)
+        print("slope (b1):", model.coef_)
+        print("coefficient of determination:", model.score(x, y))
+        if (model.score(x, y) >= tolerance):
+            warnings.warn("The coefficient of determination is higher than the acceptable coefficient of determination, use cooling of the device.", UserWarning)
+            show_plot = True
+
+        if show_plot:
+            import matplotlib.pyplot as plt
+            plt.plot(y)
+            plt.plot(model.predict(x))
+            plt.show()
 
     def _benchmark(
         self,
@@ -819,17 +1134,23 @@ class Executor(object):
             m.set_input("data", inputs[-1])
 
         print("Evaluating...", flush=True)
-
-        #num_iter = 1
-        #print("change number of iter before benchmarking")
-        num_iter = 100
+        number = 1
+        repeat = 100
+        min_repeat_ms = 0
+        time_to_work_ms = 1000
+        cooldown_interval_ms=1000
         if args.debug:
             m.run()
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
+            time_f = self.advanced_time_evaluator(m, "run", ctx, number, repeat, min_repeat_ms, time_to_work_ms, cooldown_interval_ms)
         else:
-            time_f = m.module.time_evaluator("run", ctx, number=num_iter)
-        cost = time_f().mean
+            time_f = self.advanced_time_evaluator(m, "run", ctx, number, repeat, min_repeat_ms, time_to_work_ms, cooldown_interval_ms)
+
+        benchmarkResult = time_f()
+        cost = benchmarkResult.mean
         print("%g secs/iteration\n" % cost)
+        results = benchmarkResult.results
+        self.check_distribution(results)
+        print(benchmarkResult)
 
         if validator:
             if isinstance(validator, Validator):
