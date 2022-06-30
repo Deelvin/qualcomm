@@ -715,7 +715,7 @@ class Deeplabv3Validator(Validator):
         for key in input_shape:
             self.inputs[key] = np.random.normal(size=input_shape[key]).astype(self.dtype)
         
-        categ_url = "https://github.com/Deelvin/qualcomm/raw/avoronov/rebase_master_v2"
+        categ_url = "https://github.com/Deelvin/qualcomm/raw/avoronov/rebase_master_v2/"
         categ_fn = "deeplabv3_reference_output_{}".format(dtype)
         download.download(join(categ_url, categ_fn), categ_fn)
         # genered by target="llvm -keys=cpu" at np.random.seed(1)
