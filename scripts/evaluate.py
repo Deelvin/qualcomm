@@ -1149,6 +1149,69 @@ class ModelImporter(object):
             np_result = np_result.transpose((0, 1, 4, 2, 3)).reshape(np_result.shape[0], np_result.shape[1]*np_result.shape[-1], np_result.shape[2], np_result.shape[3])
             return [np_result,]
         return (mod, {}, {"data": input_shape}, dtype, target, validator)
+    
+
+    def export_lib_and_meta(self, model_name, target="llvm", dtype="float32", output_dir="./"):
+        name_to_model = {
+        "avg_pooling": self.import_avg_pooling,
+        "concat": self.import_concat,
+        "conv2d": self.import_conv2d,
+        "conv2d_3x3": self.import_conv2d_3x3,
+        "conv2d_a6x_compiler_hang": self.import_conv2d_a6x_compiler_hang,
+        "conv2d_a6x_compiler_hang_kernel_single_op": self.import_conv2d_a6x_compiler_hang_kernel_single_op,
+        "conv2d_conv2d": self.import_conv2d_conv2d,
+        "conv2d_deeplab_1_nchwc": self.import_conv2d_deeplab_1_nchwc,
+        "conv2d_inceptionv3_nchw_3c": self.import_conv2d_inceptionv3_nchw_3c,
+        "conv2d_mem_reuse": self.import_conv2d_mem_reuse,
+        "conv2d_mem_reuse1": self.import_conv2d_mem_reuse1,
+        "conv2d_nchw": self.import_conv2d_nchw,
+        "conv2d_nhwc": self.import_conv2d_nhwc,
+        "conv2d_resnet50_v2_nchw_3c": self.import_conv2d_resnet50_v2_nchw_3c,
+        "conv2d_x4": self.import_conv2d_x4,
+        "conv2d_yolov3_v2_nchw_3c": self.import_conv2d_yolov3_v2_nchw_3c,
+        "deeplabv3": self.import_deeplabv3,
+        "depthwise_conv2d": self.import_depthwise_conv2d,
+        "depthwise_conv2d_nchwc": self.import_depthwise_conv2d_nchwc,
+        "depthwise_conv2d_nhwc": self.import_depthwise_conv2d_nhwc,
+        "global_pooling": self.import_global_pooling,
+        "inceptionv3": self.import_inceptionv3,
+        "layout_transform_contract": self.import_layout_transform_contract,
+        "layout_transform_expand": self.import_layout_transform_expand,
+        "mace_deeplabv3": self.import_mace_deeplabv3,
+        "mace_inceptionv3": self.import_mace_inceptionv3,
+        "mace_mobilenetv1_nchw": self.import_mace_mobilenetv1_nchw,
+        "mace_mobilenetv1_nhwc": self.import_mace_mobilenetv1_nhwc,
+        "mace_resnet50_v2": self.import_mace_resnet50_v2,
+        "mace_yolov3": self.import_mace_yolov3,
+        "max_pooling": self.import_max_pooling,
+        "max_pooling2": self.import_max_pooling2,
+        "mobilenetv1": self.import_mobilenetv1,
+        "mobilenetv3_ssdlite": self.import_mobilenetv3_ssdlite,
+        "resnet50": self.import_resnet50,
+        "resnet50_v2": self.import_resnet50_v2,
+        "vgg16": self.import_vgg16,
+        "yolov3_mxnet": self.import_yolov3_mxnet
+        }
+
+        import_method = name_to_model[model_name]
+        (mod, params, shape_dict, dtype, target, validator) = import_method(target, dtype)
+
+        with relay.build_config(opt_level=3):
+            graph, lib, params = relay.build(
+                mod, target_host=target, target=target, params=params
+            )
+
+        if args.output != './':
+            output_dir = output_dir + "/"
+        lib.export_library(output_dir + model_name + "-default.so")
+        print("lib exported successfully!")
+
+        import json
+
+        with open(output_dir + str(model_name) + '_data.txt', 'w+') as f:
+            f.write(model_name + " meta info\nShape_dict = " + json.dumps(shape_dict) + "\nDtype = " + str(dtype) +"\nTarget = " + str(target))
+            f.close()
+            print("Data exported successfully!")
 
 
 def get_args():
@@ -1204,6 +1267,12 @@ def get_args():
         help="Compilation target",
     )
     parser.add_argument(
+        "-BE", "--build_and_export", action="store_true", help="Whether or not to build and export library"
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, default="./", help="Export compiled library and meta into specific directory"
+    )
+    parser.add_argument(
         "--tune", action="store_true", help="Whether or not to run autotuning"
     )
     parser.add_argument(
@@ -1221,7 +1290,7 @@ def get_args():
         "log_filename": args.log,
         "early_stopping": None,
         "measure_option": autotvm.measure_option(
-            builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15, n_parallel=2),
+            builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15, n_parallel=1),
             runner=autotvm.RPCRunner(
                 args.rpc_key,
                 host=args.rpc_tracker_host,
@@ -1240,16 +1309,19 @@ args = get_args()
 
 
 def main():
-    if "opencl" in args.target:
-        executor = Executor(use_tracker="android")
+    if args.build_and_export:
+        ModelImporter().export_lib_and_meta(model_name=args.model, target="llvm", dtype="float32", output_dir=args.output)
     else:
-        executor = Executor()
-    executor.schedule(args.model, target=args.target, dtype=args.type)
-    if args.tune:
-        executor.tune_pending_benchmarks()
-    else:
-        executor.tune_pending_benchmarks(apply_previous_tune=True)
-    executor.run_pending_benchmarks()
+        if "opencl" in args.target:
+            executor = Executor(use_tracker="android")
+        else:
+            executor = Executor()
+        executor.schedule(args.model, target=args.target, dtype=args.type)
+        if args.tune:
+            executor.tune_pending_benchmarks()
+        else:
+            executor.tune_pending_benchmarks(apply_previous_tune=True)
+        executor.run_pending_benchmarks()
 
 
 def downcast_fp16(func, module):
