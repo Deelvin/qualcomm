@@ -1217,7 +1217,13 @@ class ModelImporter(object):
         print("lib exported successfully!")
 
         with open(os.path.join(output_dir, model_name + '_data.txt'), 'w+') as f:
-            f.write(json.dumps(model_name) + " meta info\nShape_dict = " + json.dumps(shape_dict) + "\nDtype = " + json.dumps(dtype) +"\nTarget = " + json.dumps(target))
+            f.write(json.dumps(
+            {
+                "Shape_dict": shape_dict,
+                "Dtype": dtype,
+                "Target": target,
+            }
+        ))
             print("Data exported successfully!")
 
 
@@ -1290,11 +1296,12 @@ def get_args():
 
     args = parser.parse_args()
     
+    
+    if args.log == None:
+        args.log = "logs/" + args.model + "." + args.type + ".autotvm.log"
+    if args.rpc_tracker_port != None:
+        args.rpc_tracker_port = int(args.rpc_tracker_port)
     if not args.build_and_export:
-        if args.log == None:
-            args.log = "logs/" + args.model + "." + args.type + ".autotvm.log"
-        if args.rpc_tracker_port != None:
-            args.rpc_tracker_port = int(args.rpc_tracker_port)
         args.tuning_options = {
             "log_filename": args.log,
             "early_stopping": None,
