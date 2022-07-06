@@ -17,12 +17,13 @@
 
 import os
 import numpy as np
+import json
 
 import tvm
 from tvm import relay
 from tvm.relay import testing
 from tvm import autotvm
-from tvm.contrib import utils, ndk
+from tvm.contrib import utils, ndk, graph_executor
 from tvm.topi import testing
 
 
@@ -180,7 +181,7 @@ class ModelImporter(object):
     def import_mace_resnet50_v2(self, target="llvm", dtype="float32"):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/resnet-v2-50/resnet-v2-50.pb"
         filename = "mace_resnet-v2-50"
-        input_names = ["input:0"]
+        input_names = ["input"]
         shape_override = {"input:0": [1, 224, 224, 3]}
         output_names = ["resnet_v2_50/predictions/Reshape_1:0"]
         onnx_model_file = self.get_onnx_from_tf1(model_url, filename, input_names, output_names, shape_override)
@@ -1151,7 +1152,7 @@ class ModelImporter(object):
         return (mod, {}, {"data": input_shape}, dtype, target, validator)
     
 
-    def export_lib_and_meta(self, model_name, target="llvm", dtype="float32", output_dir="./"):
+    def export_lib_and_meta(self, model_name, target, dtype, output_dir):
         name_to_model = {
         "avg_pooling": self.import_avg_pooling,
         "concat": self.import_concat,
@@ -1193,24 +1194,45 @@ class ModelImporter(object):
         "yolov3_mxnet": self.import_yolov3_mxnet
         }
 
+        no_validator = ["mace_yolov3",
+                        "mobilenetv3_ssdlite",
+                        "deeplabv3",
+                        "mace_deeplabv3", 
+                        "conv2d_resnet50_v2_nchw_3c", 
+                        "conv2d_yolov3_v2_nchw_3c", 
+                        "conv2d_inceptionv3_nchw_3c", 
+                        "conv2d_nhwc", 
+                        "depthwise_conv2d_nchwc", 
+                        "depthwise_conv2d_nhwc", 
+                        "conv2d_nchw", 
+                        "conv2d_x4"]
+
         import_method = name_to_model[model_name]
-        (mod, params, shape_dict, dtype, target, validator) = import_method(target, dtype)
+        (mod, params, shape_dict, dtype, target, _) = import_method(target, dtype)
+        #if model_name in no_validator:
+        #    (mod, params, shape_dict, dtype, target) = import_method(target, dtype)
+        #else:
+        #    (mod, params, shape_dict, dtype, target, validator) = import_method(target, dtype)
 
-        with relay.build_config(opt_level=3):
-            graph, lib, params = relay.build(
-                mod, target_host=target, target=target, params=params
-            )
+        #with relay.build_config(opt_level=3):
+        #    graph, lib, params = relay.build(
+        #        mod, target_host=target, target=target, params=params
+        #    )
 
-        if args.output != './':
-            output_dir = output_dir + "/"
-        lib.export_library(output_dir + model_name + "-default.so")
+        with tvm.transform.PassContext(opt_level=3):
+            lib = relay.build(mod, target=target, params=params)
+
+        dtype = "float32"
+        dev = tvm.cpu(0)
+        m = graph_executor.GraphModule(lib["default"](dev))
+
+        lib.export_library(os.path.join(output_dir, model_name + "-default.so"))
         print("lib exported successfully!")
 
-        import json
 
-        with open(output_dir + str(model_name) + '_data.txt', 'w+') as f:
-            f.write(model_name + " meta info\nShape_dict = " + json.dumps(shape_dict) + "\nDtype = " + str(dtype) +"\nTarget = " + str(target))
-            f.close()
+
+        with open(os.path.join(output_dir, model_name + '_data.txt'), 'w+') as f:
+            f.write(json.dumps(model_name) + " meta info\nShape_dict = " + json.dumps(shape_dict) + "\nDtype = " + json.dumps(dtype) +"\nTarget = " + json.dumps(target))
             print("Data exported successfully!")
 
 
@@ -1282,26 +1304,31 @@ def get_args():
     )
 
     args = parser.parse_args()
-    if args.log == None:
-        args.log = "logs/" + args.model + "." + args.type + ".autotvm.log"
-    if args.rpc_tracker_port != None:
-        args.rpc_tracker_port = int(args.rpc_tracker_port)
-    args.tuning_options = {
-        "log_filename": args.log,
-        "early_stopping": None,
-        "measure_option": autotvm.measure_option(
-            builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15, n_parallel=1),
-            runner=autotvm.RPCRunner(
-                args.rpc_key,
-                host=args.rpc_tracker_host,
-                port=args.rpc_tracker_port,
-                number=50,
-                timeout=15,
-                #min_repeat_ms=150,
-                #cooldown_interval=150
+    
+    if not args.build_and_export:
+        if args.log == None:
+            args.log = "logs/" + args.model + "." + args.type + ".autotvm.log"
+        if args.rpc_tracker_port != None:
+            args.rpc_tracker_port = int(args.rpc_tracker_port)
+        args.tuning_options = {
+            "log_filename": args.log,
+            "early_stopping": None,
+            "measure_option": autotvm.measure_option(
+                builder=autotvm.LocalBuilder(build_func=ndk.create_shared, timeout=15, n_parallel=2),
+                runner=autotvm.RPCRunner(
+                    args.rpc_key,
+                    host=args.rpc_tracker_host,
+                    port=args.rpc_tracker_port,
+                    number=50,
+                    timeout=15,
+                    #min_repeat_ms=150,
+                    #cooldown_interval=150
+                ),
             ),
-        ),
-    }
+        }
+    else:
+        args.tuning_options = {             
+        }
     return args
 
 
@@ -1310,7 +1337,7 @@ args = get_args()
 
 def main():
     if args.build_and_export:
-        ModelImporter().export_lib_and_meta(model_name=args.model, target="llvm", dtype="float32", output_dir=args.output)
+        ModelImporter().export_lib_and_meta(model_name=args.model, target=args.target, dtype=args.type, output_dir=args.output)
     else:
         if "opencl" in args.target:
             executor = Executor(use_tracker="android")
@@ -1827,3 +1854,5 @@ class Executor(object):
 
 if __name__ == "__main__":
     main()
+
+# %%
