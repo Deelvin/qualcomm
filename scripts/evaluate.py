@@ -181,7 +181,7 @@ class ModelImporter(object):
     def import_mace_resnet50_v2(self, target="llvm", dtype="float32"):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/resnet-v2-50/resnet-v2-50.pb"
         filename = "mace_resnet-v2-50"
-        input_names = ["input"]
+        input_names = ["input:0"]
         shape_override = {"input:0": [1, 224, 224, 3]}
         output_names = ["resnet_v2_50/predictions/Reshape_1:0"]
         onnx_model_file = self.get_onnx_from_tf1(model_url, filename, input_names, output_names, shape_override)
@@ -1209,27 +1209,12 @@ class ModelImporter(object):
 
         import_method = name_to_model[model_name]
         (mod, params, shape_dict, dtype, target, _) = import_method(target, dtype)
-        #if model_name in no_validator:
-        #    (mod, params, shape_dict, dtype, target) = import_method(target, dtype)
-        #else:
-        #    (mod, params, shape_dict, dtype, target, validator) = import_method(target, dtype)
-
-        #with relay.build_config(opt_level=3):
-        #    graph, lib, params = relay.build(
-        #        mod, target_host=target, target=target, params=params
-        #    )
 
         with tvm.transform.PassContext(opt_level=3):
             lib = relay.build(mod, target=target, params=params)
 
-        dtype = "float32"
-        dev = tvm.cpu(0)
-        m = graph_executor.GraphModule(lib["default"](dev))
-
         lib.export_library(os.path.join(output_dir, model_name + "-default.so"))
         print("lib exported successfully!")
-
-
 
         with open(os.path.join(output_dir, model_name + '_data.txt'), 'w+') as f:
             f.write(json.dumps(model_name) + " meta info\nShape_dict = " + json.dumps(shape_dict) + "\nDtype = " + json.dumps(dtype) +"\nTarget = " + json.dumps(target))
@@ -1854,5 +1839,3 @@ class Executor(object):
 
 if __name__ == "__main__":
     main()
-
-# %%
