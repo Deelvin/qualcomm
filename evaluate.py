@@ -18,7 +18,7 @@
 import os
 import numpy as np
 
-#import mxnet.gluon as gluon
+import mxnet.gluon as gluon
 import tvm
 from tvm import relay
 from tvm.relay import testing
@@ -256,12 +256,11 @@ class ModelImporter(object):
         model, input_shape = gluon_model("vgg16", batch_size=1)
         shape_dict = {"data": input_shape}
         mod, params = relay.frontend.from_mxnet(model, shape_dict)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
 
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, preproc="mxnet"))
 
     def import_mace_deeplabv3(self, target="llvm", dtype="float32"):
