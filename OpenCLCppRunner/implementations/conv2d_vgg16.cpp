@@ -30,6 +30,7 @@ ExecTime conv2d_vgg16() {
     std::vector<float> input(is.b * is.h * is.w * is.c * is.bc);
     std::vector<float> filter(fs.och * fs.ich * fs.h * fs.w * fs.bc);
     std::vector<float> bias(fs.och * fs.bc);
+    size_t output_size = is.b * is.h * is.w * is.bc * fs.och;
     size_t gws0[3] = {115200, 1, 1};
     size_t lws0[3] = {64, 1, 1};
     size_t gws1[3] = {14, 14, 128};
@@ -102,7 +103,7 @@ ExecTime conv2d_vgg16() {
     assert(err == CL_SUCCESS);
 
     // output
-    cl_mem output = clCreateBuffer(context, CL_MEM_READ_WRITE, bias.size() * sizeof(float), NULL, &err);
+    cl_mem output = clCreateBuffer(context, CL_MEM_READ_WRITE, output_size * sizeof(float), NULL, &err);
     assert(err == CL_SUCCESS);
 
     cl_program program = clCreateProgramWithSource(context, 1,  &str, NULL, &err);
