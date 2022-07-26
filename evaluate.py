@@ -18,7 +18,7 @@
 import os
 import numpy as np
 
-import mxnet.gluon as gluon
+#import mxnet.gluon as gluon
 import tvm
 from tvm import relay
 from tvm.relay import testing
@@ -161,14 +161,12 @@ class ModelImporter(object):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/resnet-v2-50/resnet-v2-50.pb"
         filename = "mace_resnet-v2-50"
         input_names = ["input:0"]
-        shape_override = {"input:0": [1, 224, 224, 3]}
+        shape_override = {"input:0": [1, 299, 299, 3]}
         output_names = ["resnet_v2_50/predictions/Reshape_1:0"]
         onnx_model_file = self.get_onnx_from_tf1(model_url, filename, input_names, output_names, shape_override)
         import onnx
         model = onnx.load(onnx_model_file)
-        shape_dict = {'input:0': [1, 224, 224, 3]}
-        mod, params = relay.frontend.from_onnx(model, shape_dict, freeze_params=True)
-
+        mod, params = relay.frontend.from_onnx(model, shape_override, freeze_params=True)
         # DEELVIN-207
         # mod = relay.transform.InferType()(mod)
         # mod = relay.transform.ToMixedPrecision()(mod)
@@ -180,7 +178,8 @@ class ModelImporter(object):
         if dtype == "float16":
             mod = downcast_fp16(mod["main"], mod)
         mod = relay.quantize.prerequisite_optimize(mod, params)
-        return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
+        return (mod, params, shape_override, dtype, target, \
+                ImageNetValidator(shape_override, "NHWC", preproc="keras"))
 
 
     def import_ac_resnet50_tf(self, target="llvm", dtype="float32"):
@@ -1090,13 +1089,11 @@ class Executor(object):
             self._connect_tracker()
 
         with relay.build_config(opt_level=3):
+            # lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
+            # lib2.export_library("_model.so", ndk.create_shared)
             graph, lib, params = relay.build(
                 tvm_mod, target_host=target_host, target=target, params=params
             )
-            # TODO(amalyshe): export library. conflicts with previous compilation since parameters
-            # on the next line are not original parameters. Need to fix
-            #lib2 = relay.build(tvm_mod, target=target, target_host=target_host, params=params)
-            #lib2.export_library("_model.so", ndk.create_shared)
             # print("JSON:\n", graph)
 
         if self.remote:
