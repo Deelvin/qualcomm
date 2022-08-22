@@ -45,6 +45,18 @@ def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: s
         mixed_precision_type,
     ]
 
+@register_mixed_precision_conversion("nn.dense", level=11)
+def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: str):
+    global conv2d_acc
+    return [
+        # always do main calculation in mixed_precision_type
+        relay.transform.mixed_precision.MIXED_PRECISION_ALWAYS,
+        # the dtype for the accumulator
+        conv2d_acc,
+        # the output dtype for the operation (usually fp16)
+        mixed_precision_type,
+    ]
+
 
 class ModelImporter(object):
     def available_models(self):
@@ -161,19 +173,19 @@ class ModelImporter(object):
 
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
 
-    def import_conv2d_resnet50_v2(self, target="llvm", dtype="float32"):
+    def import_conv2d_deeplabv3(self, target="llvm", dtype="float32"):
         dtype_init="float32"
-        input_shape = (1,256, 14, 14)
-        filter_shape = (256, 256, 3, 3)
-        bias_shape = (1, 256, 1, 1)
+        input_shape = (1, 513, 513, 3)
+        filter_shape = (3, 3, 3, 32)
+        bias_shape = (1, 1, 1, 32)
         A = relay.var("data", shape=input_shape, dtype=dtype_init)
         B = relay.var("weight", shape=filter_shape, dtype=dtype_init)
         bias = relay.var("bias", shape=bias_shape, dtype=dtype_init)
 
         #C = relay.nn.relu(A)
-        conv = relay.nn.conv2d(A, B, data_layout="NCHW", kernel_layout="OIHW",
-                            padding=[1,1,1,1],strides=[1,1],
-                            out_dtype=dtype_init, channels=256, kernel_size=(3,3))
+        conv = relay.nn.conv2d(A, B, data_layout="NHWC", kernel_layout="HWIO",
+                            padding=[1,1,1,1],strides=[2,2],
+                            out_dtype=dtype_init, channels=32, kernel_size=(3,3))
         D = relay.op.add(conv, bias)
         D = relay.op.nn.relu(D)
 
@@ -189,13 +201,10 @@ class ModelImporter(object):
             "bias" : tvm.nd.array(bias_data),
         }
 
-        print(mod)
-        if dtype == "float16":
-            from tvm.ir import IRModule
-            mod = relay.transform.InferType()(IRModule.from_expr(mod))
-            mod = relay.transform.ToMixedPrecision()(mod["main"])
-            # mod = downcast_fp16(mod["main"], mod)
-        print(mod)
+        # downcast to float16
+        mod = convert_to_dtype(mod, dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, {"data": input_shape}, dtype, target)
 
 
@@ -271,6 +280,11 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["ResizeBilinear_2"])
 
+        # hack for insuficient pattern support in FlattenAtrousConv
+        # if it is called after cpnvert to fp16 with mixed precision, it will not be able
+        # to catch cast. We need to extend FlattenAtrousConv but for now we are calling it
+        # explicitly
+        mod = tvm.relay.transform.FlattenAtrousConv()(mod)
         # downcast to float16
         mod = convert_to_dtype(mod["main"], dtype)
         dtype = "float32" if dtype == "float32" else "float16"
@@ -1185,7 +1199,7 @@ class Executor(object):
         tasks,
         measure_option,
         tuner="xgb",
-        n_trial=16,
+        n_trial=100,
         early_stopping=None,
         log_filename="tuning.log",
         use_transfer_learning=False,
