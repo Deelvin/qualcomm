@@ -1199,7 +1199,7 @@ class Executor(object):
         tasks,
         measure_option,
         tuner="xgb",
-        n_trial=100,
+        n_trial=333,
         early_stopping=None,
         log_filename="tuning.log",
         use_transfer_learning=False,
