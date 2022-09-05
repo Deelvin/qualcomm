@@ -18,7 +18,7 @@
 import os
 import numpy as np
 
-#import mxnet.gluon as gluon
+import mxnet.gluon as gluon
 import tvm
 from tvm import relay
 from tvm.relay import testing
@@ -26,20 +26,36 @@ from tvm import autotvm
 from tvm.contrib import utils, ndk
 from tvm.topi import testing
 
-# DEELVIN-207
-# from tvm.relay.op import register_mixed_precision_conversion
-# Pick a priority > 10 to overwrite defaults, higher priorities take precedence
-# @register_mixed_precision_conversion("nn.conv2d", level=11)
-# def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: str):
-#     return [
-#         # always do main calculation in mixed_precision_type
-#         relay.transform.mixed_precision.MIXED_PRECISION_ALWAYS,
-#         # the dtype for the accumulator
-#         "float32",
-#         # the output dtype for the operation (usually fp16)
-#         mixed_precision_type,
-#     ]
+from tvm.relay.op import register_mixed_precision_conversion
 
+# TODO(amalyshe) current ugly solution with global variable should be substituted to
+# more convenient
+conv2d_acc = "float32"
+
+# Pick a priority > 10 to overwrite defaults, higher priorities take precedence
+@register_mixed_precision_conversion("nn.conv2d", level=11)
+def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: str):
+    global conv2d_acc
+    return [
+        # always do main calculation in mixed_precision_type
+        relay.transform.mixed_precision.MIXED_PRECISION_ALWAYS,
+        # the dtype for the accumulator
+        conv2d_acc,
+        # the output dtype for the operation (usually fp16)
+        mixed_precision_type,
+    ]
+
+@register_mixed_precision_conversion("nn.dense", level=11)
+def conv2d_mixed_precision_rule(call_node: "relay.Call", mixed_precision_type: str):
+    global conv2d_acc
+    return [
+        # always do main calculation in mixed_precision_type
+        relay.transform.mixed_precision.MIXED_PRECISION_ALWAYS,
+        # the dtype for the accumulator
+        conv2d_acc,
+        # the output dtype for the operation (usually fp16)
+        mixed_precision_type,
+    ]
 
 
 class ModelImporter(object):
@@ -135,9 +151,9 @@ class ModelImporter(object):
                                         outputs=["MobilenetV1/Predictions/Reshape_1"])
 
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
 
     def import_mace_mobilenetv1_nchw(self, target="llvm", dtype="float32"):
@@ -152,10 +168,45 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_onnx(model, shape_dict, freeze_params=True)
 
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
+
+    def import_conv2d_deeplabv3(self, target="llvm", dtype="float32"):
+        dtype_init="float32"
+        input_shape = (1, 513, 513, 3)
+        filter_shape = (3, 3, 3, 32)
+        bias_shape = (1, 1, 1, 32)
+        A = relay.var("data", shape=input_shape, dtype=dtype_init)
+        B = relay.var("weight", shape=filter_shape, dtype=dtype_init)
+        bias = relay.var("bias", shape=bias_shape, dtype=dtype_init)
+
+        #C = relay.nn.relu(A)
+        conv = relay.nn.conv2d(A, B, data_layout="NHWC", kernel_layout="HWIO",
+                            padding=[1,1,1,1],strides=[2,2],
+                            out_dtype=dtype_init, channels=32, kernel_size=(3,3))
+        D = relay.op.add(conv, bias)
+        D = relay.op.nn.relu(D)
+
+        mod = relay.Function([A, B, bias], D)
+        np.random.seed(0)
+        initializer = relay.testing.init.Xavier()
+        filter_data = np.zeros(filter_shape).astype(dtype_init)
+        bias_data = np.zeros(bias_shape).astype(dtype_init)
+        initializer("weight", filter_data)
+        initializer("bias", bias_data)
+        params = {
+            "weight": tvm.nd.array(filter_data),
+            "bias" : tvm.nd.array(bias_data),
+        }
+
+        # downcast to float16
+        mod = convert_to_dtype(mod, dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, {"data": input_shape}, dtype, target)
+
 
     def import_mace_resnet50_v2(self, target="llvm", dtype="float32"):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/resnet-v2-50/resnet-v2-50.pb"
@@ -167,17 +218,11 @@ class ModelImporter(object):
         import onnx
         model = onnx.load(onnx_model_file)
         mod, params = relay.frontend.from_onnx(model, shape_override, freeze_params=True)
-        # DEELVIN-207
-        # mod = relay.transform.InferType()(mod)
-        # mod = relay.transform.ToMixedPrecision()(mod)
-        # print(mod)
-
-        mod = relay.quantize.prerequisite_optimize(mod, params)
 
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_override, dtype, target, \
                 ImageNetValidator(shape_override, "NHWC", preproc="keras"))
 
@@ -196,11 +241,7 @@ class ModelImporter(object):
 
         mod = relay.quantize.prerequisite_optimize(mod, params)
 
-        # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-        return (mod, params, shape_dict, dtype, target)
+        return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras_mobilenetv1"))
 
 
     def import_mace_inceptionv3(self, target="llvm", dtype="float32"):
@@ -214,23 +255,21 @@ class ModelImporter(object):
         shape_dict = {'input:0': [1, 299, 299, 3]}
         mod, params = relay.frontend.from_onnx(model, shape_dict, freeze_params=True)
 
-        mod = relay.quantize.prerequisite_optimize(mod, params)
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, "NHWC", preproc="keras"))
 
     def import_mxnet_vgg16(self, target="llvm", dtype="float32"):
         model, input_shape = gluon_model("vgg16", batch_size=1)
         shape_dict = {"data": input_shape}
         mod, params = relay.frontend.from_mxnet(model, shape_dict)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
 
         # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
         return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, preproc="mxnet"))
 
     def import_mace_deeplabv3(self, target="llvm", dtype="float32"):
@@ -241,15 +280,17 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["ResizeBilinear_2"])
 
-        mod = relay.quantize.prerequisite_optimize(mod, params)
+        # hack for insufficient pattern support in FlattenAtrousConv
+        # if it is called after convert to fp16 with mixed precision, it will not be able
+        # to catch cast.
+        # TODO(amalyshe) We need to extend FlattenAtrousConv but for now we are calling it
+        # explicitly
+        mod = tvm.relay.transform.FlattenAtrousConv()(mod)
+        # downcast to float16
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
 
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-            mod = relay.quantize.prerequisite_optimize(mod, params)
-
-        mod = relay.quantize.prerequisite_optimize(mod, params)
         return (mod, params, shape_dict, dtype, target, Deeplabv3Validator(shape_dict, dtype))
-
 
 
     def import_mace_yolov3(self, target="llvm", dtype="float32"):
@@ -260,72 +301,11 @@ class ModelImporter(object):
         mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
                                         outputs=["conv2d_59/BiasAdd","conv2d_67/BiasAdd","conv2d_75/BiasAdd"])
 
-
-        # model_url = "http://cnbj1.fds.api.xiaomi.com/mace/miai-models/yolo-v3/yolo-v3.pb"
-        # model_path = os.path.abspath(
-        #     os.path.dirname(os.path.realpath(__file__))
-        #     + "/../models/mace_yolov3/yolo-v3.pb"
-        # )
-
-        # from tvm.contrib import download
-        # download.download(model_url, model_path)
-
-        # import tensorflow as tf
-        # try:
-        #     tf_compat_v1 = tf.compat.v1
-        # except ImportError:
-        #     tf_compat_v1 = tf
-        # # Tensorflow utility functions
-        # import tvm.relay.testing.tf as tf_testing
-
-        # with tf_compat_v1.gfile.GFile(model_path, "rb") as f:
-        #     graph_def = tf_compat_v1.GraphDef()
-        #     graph_def.ParseFromString(f.read())
-        #     #graph = tf.import_graph_def(graph_def, name="")
-        #     # Call the utility to import the graph definition into default graph.
-        #     graph_def = tf_testing.ProcessGraphDefParam(graph_def)
-
-        # input_shape = {"input_1": (1, 416, 416, 3)}
-        # mod, params = relay.frontend.from_tensorflow(graph_def, shape=input_shape,
-        #                                 outputs=["conv2d_59/BiasAdd","conv2d_67/BiasAdd","conv2d_75/BiasAdd"])
-
-        from tvm.relay import transform
-        #mod = transform.DynamicToStatic()(mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-            mod = relay.quantize.prerequisite_optimize(mod, params)
+        # downcast to float16
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
 
         return (mod, params, shape_dict, dtype, target, Yolov3Validator(shape_dict))
-
-
-    def import_resnet50(self, target="llvm", dtype="float32"):
-        model, input_shape = gluon_model("resnet50_v1", batch_size=1)
-        shape_dict = {"data": input_shape}
-        mod, params = relay.frontend.from_mxnet(model, shape_dict)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-
-        # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-        return (mod, params, shape_dict, dtype, target, ImageNetValidator(shape_dict, preproc="mxnet"))
-
-
-    def import_yolov3_mxnet(self, target="llvm", dtype="float32"):
-        model, input_shape = gluoncv_model("yolo3_darknet53_voc", batch_size=1)
-        shape_dict = {"data": input_shape}
-        mod, params = relay.frontend.from_mxnet(model, shape_dict)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-
-        # downcast to float16
-        if dtype == "float16":
-            mod = downcast_fp16(mod["main"], mod)
-        mod = relay.quantize.prerequisite_optimize(mod, params)
-        print(mod)
-        return (mod, params, shape_dict, dtype, target, VOCValidator(shape_dict, preproc="gluoncv"))
-
 
 def get_args():
     import argparse
@@ -349,7 +329,7 @@ def get_args():
         "--type",
         type=str,
         default="float16",
-        choices=["float32", "float16"],
+        choices=["float32", "float16", "float16_acc32"],
         help="Specify whether the model should be run with single or half precision floating point values",
     )
     parser.add_argument(
@@ -389,8 +369,6 @@ def get_args():
     )
 
     args = parser.parse_args()
-    if args.log == None:
-        args.log = "logs/" + args.model + "." + args.type + ".autotvm.log"
     if args.rpc_tracker_port != None:
         args.rpc_tracker_port = int(args.rpc_tracker_port)
     args.tuning_options = {
@@ -427,6 +405,23 @@ def main():
         executor.tune_pending_benchmarks(apply_previous_tune=True)
     executor.run_pending_benchmarks()
 
+
+def convert_to_dtype(mod, dtype):
+    # downcast to float16
+    if dtype == "float16" or dtype == "float16_acc32":
+        global conv2d_acc
+        conv2d_acc = "float16" if dtype == "float16" else "float32"
+        from tvm.ir import IRModule
+        mod = IRModule.from_expr(mod)
+        seq = tvm.transform.Sequential(
+            [
+                relay.transform.InferType(),
+                relay.transform.ToMixedPrecision()
+            ]
+        )
+        with tvm.transform.PassContext(opt_level=3):
+            mod = seq(mod)
+    return mod
 
 def downcast_fp16(func, module):
     from tvm.relay.expr_functor import ExprMutator
@@ -1189,7 +1184,10 @@ class Executor(object):
             def tuned_benchmark():
                 print("Apply best performing tuning profiles:")
 
-                with autotvm.apply_history_best(options["log_filename"]):
+                if (options["log_filename"]):
+                    with autotvm.apply_history_best(options["log_filename"]):
+                        bench()
+                else:
                     bench()
 
             self.benchmarks.pop(benchmark_index)
