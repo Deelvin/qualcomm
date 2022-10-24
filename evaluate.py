@@ -18,7 +18,7 @@
 import os
 import numpy as np
 
-import mxnet.gluon as gluon
+#import mxnet.gluon as gluon
 import tvm
 from tvm import relay
 from tvm.relay import testing
@@ -141,6 +141,76 @@ class ModelImporter(object):
             graph_def.ParseFromString(f.read())
             graph_def = tf_testing.ProcessGraphDefParam(graph_def)
         return graph_def
+
+    def import_deelvin164_classifier_nhwc(self, target="llvm", dtype="float32"):
+        model_url = ""
+        filename = "classifier"
+
+        output_names = ["Edgetpu_M/prob", "Edgetpu_M/prob_openset"]
+        shape_dict = {"image": (1, 300, 300, 3)}
+        graph_def = self.get_graphdef_from_tf1(model_url, filename)
+        mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
+                                        outputs=output_names)
+
+        # downcast to float16
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, shape_dict, dtype, target)
+
+
+    def import_deelvin164_classifier_nchw(self, target="llvm", dtype="float32"):
+        model_url = ""
+        filename = "classifier"
+        input_names = ["image:0"]
+        output_names = ["Edgetpu_M/prob:0", "Edgetpu_M/prob_openset:0"]
+        shape_dict = {"image:0": [1, 300, 300, 3]}
+        onnx_model_file = self.get_onnx_from_tf1(model_url, filename, input_names, output_names, shape_dict)
+        import onnx
+        model = onnx.load(onnx_model_file)
+        mod, params = relay.frontend.from_onnx(model, shape_dict, freeze_params=True)
+
+        # downcast to float16
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, shape_dict, dtype, target)
+
+    def import_deelvin164_detector_nhwc(self, target="llvm", dtype="float32"):
+        model_url = ""
+        filename = "detector"
+
+        output_names = ["AIG/classification_2", "AIG/clipped_boxes/concat"]
+        shape_dict = {"input": (1, 320, 320, 3), "anchors": (1, 1, 19125, 4)}
+        graph_def = self.get_graphdef_from_tf1(model_url, filename)
+        mod, params = relay.frontend.from_tensorflow(graph_def, shape=shape_dict,
+                                        outputs=output_names)
+
+        mod = convert_to_dtype(mod["main"], dtype)
+        print(mod)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, shape_dict, dtype, target)
+
+    def import_deelvin164_detector_nchw(self, target="llvm", dtype="float32"):
+        model_url = ""
+        filename = "detector"
+
+        # input:0 - [1,320,320,3]
+        # AIG/classification_2:0 - [19125,3]
+        input_names = ["input:0", "anchors:0"]
+        output_names = ["AIG/classification_2:0", "AIG/clipped_boxes/concat:0"]
+        shape_dict = {"input:0": [1, 320, 320, 3], "anchors:0": [1, 1, 19125, 4]}
+        onnx_model_file = self.get_onnx_from_tf1(model_url, filename, input_names, output_names, shape_dict)
+        import onnx
+        model = onnx.load(onnx_model_file)
+        mod, params = relay.frontend.from_onnx(model, freeze_params=True)
+
+        mod = convert_to_dtype(mod["main"], dtype)
+        print(mod)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, shape_dict, dtype, target)
 
     def import_mace_mobilenetv1_nhwc(self, target="llvm", dtype="float32"):
         model_url = "https://cnbj1.fds.api.xiaomi.com/mace/miai-models/mobilenet-v1/mobilenet-v1-1.0.pb"
