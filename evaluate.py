@@ -307,6 +307,42 @@ class ModelImporter(object):
 
         return (mod, params, shape_dict, dtype, target, Yolov3Validator(shape_dict))
 
+
+    def import_vit_base_patch16_224(self, target="llvm", dtype="float32"):
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        import torch
+        import torchvision
+        class TraceWrapper(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, *inp):
+                out = self.model(*inp)
+                return out["logits"]
+
+        model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224')
+        #model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224', return_dict=False)
+        #input_shape = [1, 3, 224, 224]
+        input_shape = (1, 3, 224, 224)
+        input_data = torch.randn(input_shape)
+        scripted_model = torch.jit.trace(TraceWrapper(model), input_data, strict=False).eval()
+        #scripted_model = torch.jit.trace(model, input_data, strict=False).eval()
+        #shape_list = [("input", (1, 3, 224, 224))]
+        #mod, params = relay.frontend.from_pytorch(model, shape_list)
+        #print(mod)
+        input_name = "input0"
+        shape_list = [(input_name, input_shape)]
+        shape_dict = {input_name: input_shape}
+        mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
+        print(mod)
+        # downcast to float16
+        mod = convert_to_dtype(mod["main"], dtype)
+        dtype = "float32" if dtype == "float32" else "float16"
+
+        return (mod, params, shape_dict, dtype, target)
+
+
 def get_args():
     import argparse
 
