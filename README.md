@@ -39,8 +39,8 @@ In the table below you can see the performance numbers for a set of models from 
 | TVM FP16    (VM) |                 500,03|             63,63|            208,31|                      3,11|             24,63|
 | TVM FP16a32 (GE) |                 403,74|             80,46|            260,57|                      4,07|           29,6857|
 | TVM FP16a32 (VM) |                 662,15|             94,41|            265,45|                      4,11|                 -|
-| TVM FP32    (GE) |                 496,67|             80,44|            317,15|                      4,22|             35,46|
-| TVM FP32    (VM) |                 754,33|             95,14|            316,05|                      4,28|             42,43|
+| TVM FP32    (GE) |                 350,85|             80,44|            273,22|                      4,22|             35,46|
+| TVM FP32    (VM) |                 610,92|             95,14|            277,96|                      4,28|             42,43|
 
 *Virtual Machine has performance degradation only on Non Max Suppression layers, which seems to be a bug, that nevertheless affects the final performance ([issue#15405](https://github.com/apache/tvm/issues/15405)).*
 
